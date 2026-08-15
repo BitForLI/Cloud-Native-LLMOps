@@ -1,4 +1,4 @@
-from app.providers.base import LLMProvider
+from app.providers.base import LLMProvider, LLMResult
 from app.providers.bedrock import (
     BedrockInvocationError,
     BedrockProvider,
@@ -14,6 +14,7 @@ __all__ = [
     "BedrockProviderError",
     "BedrockResponseError",
     "LLMProvider",
+    "LLMResult",
     "LocalProvider",
     "get_provider",
 ]

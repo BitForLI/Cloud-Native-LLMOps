@@ -46,6 +46,11 @@ Every HTTP response includes `X-Request-ID`. Application logs are JSON and
 record the request ID, method, route template, status, latency, selected model,
 and error type. Prompt and response content are deliberately excluded.
 
+`GET /metrics` exposes the process-local request/error rate, LLM P50/P95
+latency, model error rate, token totals, and accumulated estimated cost. Cost
+rates are configuration values because Bedrock pricing varies by model and
+region. CloudWatch publishing is added in the infrastructure phase.
+
 ## Delivery model
 
 1. PR: format/lint, unit tests, evaluation quality gate, dependency security scan.

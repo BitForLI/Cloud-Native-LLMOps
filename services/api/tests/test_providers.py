@@ -10,7 +10,12 @@ def test_local_provider_is_deterministic():
 
     assert isinstance(provider, LLMProvider)
     assert provider.model_id == "local-deterministic-stub"
-    assert provider.generate("  hello  ") == "Received: hello"
+    result = provider.generate("  hello  ")
+    assert result.output == "Received: hello"
+    assert result.model_id == "local-deterministic-stub"
+    assert result.input_tokens is None
+    assert result.output_tokens is None
+    assert result.estimated_cost == 0.0
 
 
 def test_factory_selects_local_provider():

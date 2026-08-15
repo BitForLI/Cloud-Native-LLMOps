@@ -6,6 +6,7 @@ from uuid import uuid4
 from fastapi import Request, Response
 
 from app.logging import bind_request_id, reset_request_id
+from app.metrics import get_metrics
 
 REQUEST_ID_HEADER = "X-Request-ID"
 _VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -53,6 +54,7 @@ async def request_context_middleware(request: Request, call_next) -> Response:
         response = await call_next(request)
     except Exception as exc:
         latency_ms = round((time.perf_counter() - started) * 1000, 2)
+        get_metrics().record_request(500)
         logger.exception(
             "Request failed",
             extra=_log_fields(request, 500, latency_ms, type(exc).__name__),
@@ -60,6 +62,7 @@ async def request_context_middleware(request: Request, call_next) -> Response:
         raise
     else:
         latency_ms = round((time.perf_counter() - started) * 1000, 2)
+        get_metrics().record_request(response.status_code)
         response.headers[REQUEST_ID_HEADER] = request_id
         logger.info(
             "Request completed",
@@ -68,4 +71,3 @@ async def request_context_middleware(request: Request, call_next) -> Response:
         return response
     finally:
         reset_request_id(token)
-

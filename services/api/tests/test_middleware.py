@@ -3,6 +3,7 @@ from uuid import UUID
 import app.middleware as middleware_module
 from app.logging import current_request_id
 from app.main import app
+from app.providers.base import LLMResult
 from app.providers.factory import get_provider
 from fastapi.testclient import TestClient
 
@@ -67,7 +68,7 @@ def test_failed_request_logs_error_type(monkeypatch):
     class FailingProvider:
         model_id = "failing-model"
 
-        def generate(self, prompt: str) -> str:
+        def generate(self, prompt: str) -> LLMResult:
             raise RuntimeError("provider unavailable")
 
     monkeypatch.setattr(

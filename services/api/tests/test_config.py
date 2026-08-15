@@ -24,6 +24,8 @@ def test_settings_read_environment_variables(monkeypatch):
     monkeypatch.setenv("BEDROCK_MODEL_ID", "example-model")
     monkeypatch.setenv("BEDROCK_MAX_TOKENS", "1024")
     monkeypatch.setenv("BEDROCK_TEMPERATURE", "0.25")
+    monkeypatch.setenv("BEDROCK_INPUT_COST_PER_MILLION_TOKENS", "0.5")
+    monkeypatch.setenv("BEDROCK_OUTPUT_COST_PER_MILLION_TOKENS", "1.5")
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
 
     settings = Settings(_env_file=None)
@@ -34,6 +36,8 @@ def test_settings_read_environment_variables(monkeypatch):
     assert settings.bedrock_model_id == "example-model"
     assert settings.bedrock_max_tokens == 1024
     assert settings.bedrock_temperature == 0.25
+    assert settings.bedrock_input_cost_per_million_tokens == 0.5
+    assert settings.bedrock_output_cost_per_million_tokens == 1.5
     assert settings.log_level == "DEBUG"
 
 
@@ -42,6 +46,8 @@ def test_settings_read_environment_variables(monkeypatch):
     [
         ("bedrock_max_tokens", 0),
         ("bedrock_temperature", 1.1),
+        ("bedrock_input_cost_per_million_tokens", -0.1),
+        ("bedrock_output_cost_per_million_tokens", -0.1),
         ("bedrock_connect_timeout_seconds", 0),
         ("bedrock_read_timeout_seconds", 301),
     ],

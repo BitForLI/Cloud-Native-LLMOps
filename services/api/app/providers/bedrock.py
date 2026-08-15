@@ -7,6 +7,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.config import Settings
+from app.providers.base import LLMResult
 
 
 class BedrockProviderError(RuntimeError):
@@ -33,6 +34,12 @@ class BedrockProvider:
         self.model_id = settings.bedrock_model_id
         self.max_tokens = settings.bedrock_max_tokens
         self.temperature = settings.bedrock_temperature
+        self.input_cost_per_million_tokens = (
+            settings.bedrock_input_cost_per_million_tokens
+        )
+        self.output_cost_per_million_tokens = (
+            settings.bedrock_output_cost_per_million_tokens
+        )
         self._client = client or boto3.client(
             "bedrock-runtime",
             region_name=self.region,
@@ -43,7 +50,7 @@ class BedrockProvider:
             ),
         )
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str) -> LLMResult:
         request_body = json.dumps(self._build_payload(prompt))
 
         try:
@@ -86,7 +93,7 @@ class BedrockProvider:
             ],
         }
 
-    def _parse_response(self, response: dict[str, Any]) -> str:
+    def _parse_response(self, response: dict[str, Any]) -> LLMResult:
         """Extract all text blocks from an Anthropic Messages API response."""
 
         body = response.get("body")
@@ -113,4 +120,50 @@ class BedrockProvider:
         if not text:
             raise BedrockResponseError("Bedrock response contains no generated text.")
 
-        return text
+        input_tokens, output_tokens = self._parse_usage(payload)
+        return LLMResult(
+            output=text,
+            model_id=self.model_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            estimated_cost=self._estimate_cost(input_tokens, output_tokens),
+        )
+
+    def _parse_usage(self, payload: dict[str, Any]) -> tuple[int | None, int | None]:
+        usage = payload.get("usage")
+        if usage is None:
+            return None, None
+        if not isinstance(usage, dict):
+            raise BedrockResponseError("Bedrock response contains invalid usage data.")
+
+        input_tokens = usage.get("input_tokens")
+        output_tokens = usage.get("output_tokens")
+        for token_count in (input_tokens, output_tokens):
+            if token_count is not None and (
+                not isinstance(token_count, int)
+                or isinstance(token_count, bool)
+                or token_count < 0
+            ):
+                raise BedrockResponseError(
+                    "Bedrock response contains invalid token counts."
+                )
+        return input_tokens, output_tokens
+
+    def _estimate_cost(
+        self,
+        input_tokens: int | None,
+        output_tokens: int | None,
+    ) -> float | None:
+        if (
+            input_tokens is None
+            or output_tokens is None
+            or self.input_cost_per_million_tokens is None
+            or self.output_cost_per_million_tokens is None
+        ):
+            return None
+
+        cost = (
+            input_tokens * self.input_cost_per_million_tokens
+            + output_tokens * self.output_cost_per_million_tokens
+        ) / 1_000_000
+        return round(cost, 8)

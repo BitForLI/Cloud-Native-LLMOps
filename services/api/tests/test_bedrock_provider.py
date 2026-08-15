@@ -38,6 +38,8 @@ def make_settings(**overrides):
         "bedrock_model_id": "anthropic.test-model",
         "bedrock_max_tokens": 256,
         "bedrock_temperature": 0.2,
+        "bedrock_input_cost_per_million_tokens": 0.25,
+        "bedrock_output_cost_per_million_tokens": 1.25,
     }
     values.update(overrides)
     return Settings(**values, _env_file=None)
@@ -91,7 +93,8 @@ def test_generate_invokes_model_and_combines_text_blocks():
                         {"type": "text", "text": "Cloud-native "},
                         {"type": "tool_use", "name": "ignored"},
                         {"type": "text", "text": "LLMOps"},
-                    ]
+                    ],
+                    "usage": {"input_tokens": 100, "output_tokens": 40},
                 }
             ).encode("utf-8")
         )
@@ -101,7 +104,11 @@ def test_generate_invokes_model_and_combines_text_blocks():
 
     result = provider.generate("Explain LLMOps")
 
-    assert result == "Cloud-native LLMOps"
+    assert result.output == "Cloud-native LLMOps"
+    assert result.model_id == "anthropic.test-model"
+    assert result.input_tokens == 100
+    assert result.output_tokens == 40
+    assert result.estimated_cost == 0.000075
     assert len(client.calls) == 1
     request = client.calls[0]
     assert request["modelId"] == "anthropic.test-model"
@@ -139,6 +146,46 @@ def test_transport_error_is_converted():
     provider = BedrockProvider(make_settings(), client=FakeClient(error=error))
 
     with pytest.raises(BedrockInvocationError, match="EndpointConnectionError"):
+        provider.generate("hello")
+
+
+def test_missing_usage_returns_unknown_cost():
+    response = {
+        "body": FakeBody(
+            b'{"content":[{"type":"text","text":"response"}]}'
+        )
+    }
+    provider = BedrockProvider(make_settings(), client=FakeClient(response=response))
+
+    result = provider.generate("hello")
+
+    assert result.input_tokens is None
+    assert result.output_tokens is None
+    assert result.estimated_cost is None
+
+
+@pytest.mark.parametrize(
+    "usage",
+    [
+        "invalid",
+        {"input_tokens": -1, "output_tokens": 2},
+        {"input_tokens": True, "output_tokens": 2},
+    ],
+)
+def test_invalid_usage_raises_response_error(usage):
+    response = {
+        "body": FakeBody(
+            json.dumps(
+                {
+                    "content": [{"type": "text", "text": "response"}],
+                    "usage": usage,
+                }
+            ).encode()
+        )
+    }
+    provider = BedrockProvider(make_settings(), client=FakeClient(response=response))
+
+    with pytest.raises(BedrockResponseError, match="usage|token counts"):
         provider.generate("hello")
 
 

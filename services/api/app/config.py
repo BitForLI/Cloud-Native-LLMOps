@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     bedrock_model_id: str = "anthropic.claude-3-haiku-20240307-v1:0"
     bedrock_max_tokens: int = Field(default=512, ge=1, le=8192)
     bedrock_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
+    bedrock_input_cost_per_million_tokens: float | None = Field(default=None, ge=0)
+    bedrock_output_cost_per_million_tokens: float | None = Field(default=None, ge=0)
     bedrock_connect_timeout_seconds: int = Field(default=5, ge=1, le=60)
     bedrock_read_timeout_seconds: int = Field(default=60, ge=1, le=300)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"

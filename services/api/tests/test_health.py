@@ -1,4 +1,5 @@
 from app.main import app
+from app.providers.base import LLMResult
 from app.providers.factory import get_provider
 from fastapi.testclient import TestClient
 
@@ -21,8 +22,14 @@ def test_generate_delegates_to_provider():
     class FakeProvider:
         model_id = "fake-model"
 
-        def generate(self, prompt: str) -> str:
-            return f"fake response for {prompt}"
+        def generate(self, prompt: str) -> LLMResult:
+            return LLMResult(
+                output=f"fake response for {prompt}",
+                model_id=self.model_id,
+                input_tokens=10,
+                output_tokens=4,
+                estimated_cost=0.00002,
+            )
 
     app.dependency_overrides[get_provider] = FakeProvider
     try:
@@ -33,3 +40,6 @@ def test_generate_delegates_to_provider():
     assert response.status_code == 200
     assert response.json()["output"] == "fake response for delegation"
     assert response.json()["model"] == "fake-model"
+    assert response.json()["input_tokens"] == 10
+    assert response.json()["output_tokens"] == 4
+    assert response.json()["estimated_cost"] == 0.00002

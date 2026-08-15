@@ -1,4 +1,14 @@
+from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
+
+
+@dataclass(frozen=True, slots=True)
+class LLMResult:
+    output: str
+    model_id: str
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    estimated_cost: float | None = None
 
 
 @runtime_checkable
@@ -11,7 +21,7 @@ class LLMProvider(Protocol):
 
         ...
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str) -> LLMResult:
         """Generate a text response for a validated prompt."""
 
         ...
