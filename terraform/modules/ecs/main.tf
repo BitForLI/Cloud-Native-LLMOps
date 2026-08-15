@@ -20,6 +20,10 @@ locals {
     { name = "JOB_TABLE_NAME", value = var.job_table_name },
     { name = "INFERENCE_QUEUE_URL", value = var.inference_queue_url },
     { name = "LOG_LEVEL", value = var.log_level },
+    { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = "http://127.0.0.1:4317" },
+    { name = "OTEL_TRACE_SAMPLE_RATIO", value = tostring(var.otel_trace_sample_ratio) },
+    { name = "OTEL_METRICS_EXPORTER", value = "none" },
+    { name = "OTEL_LOGS_EXPORTER", value = "none" },
   ]
   worker_environment = concat(local.api_environment, [
     { name = "JOB_MAX_RECEIVE_COUNT", value = tostring(var.job_max_receive_count) },
@@ -105,6 +109,10 @@ resource "aws_ecs_task_definition" "api" {
     user                   = "10001:10001"
     readonlyRootFilesystem = true
     stopTimeout            = 30
+    dependsOn = [{
+      containerName = "aws-otel-collector"
+      condition     = "START"
+    }]
 
     portMappings = [{
       name          = "http"
@@ -148,7 +156,30 @@ resource "aws_ecs_task_definition" "api" {
         awslogs-stream-prefix = "api"
       }
     }
-  }])
+    },
+    {
+      name                   = "aws-otel-collector"
+      image                  = var.adot_collector_image
+      essential              = true
+      readonlyRootFilesystem = false
+      cpu                    = 128
+      memoryReservation      = 128
+      command                = ["--config=/etc/ecs/ecs-default-config.yaml"]
+      portMappings           = []
+      environment            = [{ name = "AWS_REGION", value = var.aws_region }]
+      secrets                = []
+      mountPoints            = []
+      volumesFrom            = []
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.api.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "adot"
+        }
+      }
+    }
+  ])
 
   lifecycle {
     precondition {
@@ -185,8 +216,12 @@ resource "aws_ecs_task_definition" "worker" {
     user                   = "10001:10001"
     readonlyRootFilesystem = true
     stopTimeout            = 30
-    portMappings           = []
-    environment            = local.worker_environment
+    dependsOn = [{
+      containerName = "aws-otel-collector"
+      condition     = "START"
+    }]
+    portMappings = []
+    environment  = local.worker_environment
     mountPoints = [{
       sourceVolume  = "worker-tmp"
       containerPath = "/tmp"
@@ -217,7 +252,30 @@ resource "aws_ecs_task_definition" "worker" {
         awslogs-stream-prefix = "worker"
       }
     }
-  }])
+    },
+    {
+      name                   = "aws-otel-collector"
+      image                  = var.adot_collector_image
+      essential              = true
+      readonlyRootFilesystem = false
+      cpu                    = 128
+      memoryReservation      = 128
+      command                = ["--config=/etc/ecs/ecs-default-config.yaml"]
+      portMappings           = []
+      environment            = [{ name = "AWS_REGION", value = var.aws_region }]
+      secrets                = []
+      mountPoints            = []
+      volumesFrom            = []
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.worker.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "adot"
+        }
+      }
+    }
+  ])
 
   lifecycle {
     precondition {

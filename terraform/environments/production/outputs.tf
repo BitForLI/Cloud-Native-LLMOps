@@ -42,6 +42,8 @@ output "production_safety_profile" {
     deployment_config          = "CodeDeployDefault.ECSCanary10Percent5Minutes"
     blue_termination_wait      = var.blue_termination_wait_minutes
     encrypted_api_auth         = module.secrets.kms_key_rotation_enabled
+    trace_sample_ratio         = module.ecs.otel_trace_sample_ratio
+    adot_collector_image       = module.ecs.adot_collector_image
   }
 }
 

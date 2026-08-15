@@ -278,6 +278,28 @@ variable "log_level" {
   }
 }
 
+variable "otel_trace_sample_ratio" {
+  description = "Head-sampling ratio used for new root traces; parent decisions are preserved."
+  type        = number
+  default     = 0.1
+
+  validation {
+    condition     = var.otel_trace_sample_ratio >= 0 && var.otel_trace_sample_ratio <= 1
+    error_message = "otel_trace_sample_ratio must be between 0 and 1."
+  }
+}
+
+variable "adot_collector_image" {
+  description = "Version-pinned AWS-supported ADOT Collector sidecar image."
+  type        = string
+  default     = "public.ecr.aws/aws-observability/aws-otel-collector:v0.48.0"
+
+  validation {
+    condition     = can(regex("^public\\.ecr\\.aws/aws-observability/aws-otel-collector:v[0-9]+\\.[0-9]+\\.[0-9]+$", var.adot_collector_image))
+    error_message = "adot_collector_image must use an explicit semantic-version tag from the AWS public repository."
+  }
+}
+
 variable "job_max_receive_count" {
   description = "Receive attempts before the Worker marks a job failed and SQS redrives it."
   type        = number

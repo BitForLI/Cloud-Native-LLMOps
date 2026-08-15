@@ -79,9 +79,26 @@ def test_task_serialization_is_versioned_strict_and_round_trips_unicode():
     body = serialize_task(task)
 
     assert deserialize_task(body) == task
-    assert json.loads(body)["version"] == 1
+    assert json.loads(body)["version"] == 2
     with pytest.raises(ValueError, match="schema"):
-        deserialize_task(json.dumps({"version": 1, "job_id": JOB_ID, "prompt": "x", "extra": 1}))
+        deserialize_task(
+            json.dumps({"version": 1, "job_id": JOB_ID, "prompt": "x", "extra": 1})
+        )
+
+
+def test_task_serialization_carries_only_bounded_xray_context_and_reads_v1():
+    carrier = {"X-Amzn-Trace-Id": "Root=1-12345678-123456789012345678901234;Sampled=1"}
+    task = JobTask(JOB_ID, "private", carrier)
+
+    assert deserialize_task(serialize_task(task)) == task
+    assert deserialize_task(
+        json.dumps({"version": 1, "job_id": JOB_ID, "prompt": "legacy"})
+    ) == JobTask(JOB_ID, "legacy")
+
+    with pytest.raises(ValueError, match="trace context"):
+        serialize_task(JobTask(JOB_ID, "private", {"Authorization": "secret"}))
+    with pytest.raises(ValueError, match="trace context"):
+        serialize_task(JobTask(JOB_ID, "private", {"X-Amzn-Trace-Id": "x\nsecret"}))
 
 
 @pytest.mark.parametrize(

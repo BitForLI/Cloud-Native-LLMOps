@@ -403,6 +403,19 @@ run "iam_separates_runtime_and_deployment_permissions" {
     )
     error_message = "Every inline role policy must stay within the IAM 10240-character quota."
   }
+
+  assert {
+    condition = alltrue([
+      for policy in [local.api_task_policy, local.worker_task_policy] : (
+        one([for statement in jsondecode(policy).Statement : statement if statement.Sid == "PublishApplicationTraces"]).Action == [
+          "xray:PutTelemetryRecords",
+          "xray:PutTraceSegments",
+        ] &&
+        one([for statement in jsondecode(policy).Statement : statement if statement.Sid == "PublishApplicationTraces"]).Resource == ["*"]
+      )
+    ])
+    error_message = "Both task roles need only the X-Ray write actions required by their collector sidecars."
+  }
 }
 
 run "rejects_wildcard_github_subject" {
@@ -559,20 +572,20 @@ run "ecs_hardens_private_api_and_worker_services" {
 
   assert {
     condition = (
-      one(jsondecode(aws_ecs_task_definition.api.container_definitions)).readonlyRootFilesystem &&
-      one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).readonlyRootFilesystem &&
-      one(jsondecode(aws_ecs_task_definition.api.container_definitions)).user == "10001:10001" &&
-      one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).user == "10001:10001"
+      one([for definition in jsondecode(aws_ecs_task_definition.api.container_definitions) : definition if definition.name == "api"]).readonlyRootFilesystem &&
+      one([for definition in jsondecode(aws_ecs_task_definition.worker.container_definitions) : definition if definition.name == "worker"]).readonlyRootFilesystem &&
+      one([for definition in jsondecode(aws_ecs_task_definition.api.container_definitions) : definition if definition.name == "api"]).user == "10001:10001" &&
+      one([for definition in jsondecode(aws_ecs_task_definition.worker.container_definitions) : definition if definition.name == "worker"]).user == "10001:10001"
     )
     error_message = "Both containers must run non-root with read-only root filesystems."
   }
 
   assert {
     condition = (
-      one(one(jsondecode(aws_ecs_task_definition.api.container_definitions)).mountPoints).containerPath == "/tmp" &&
-      one(one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).mountPoints).containerPath == "/tmp" &&
-      !contains(keys(one(jsondecode(aws_ecs_task_definition.api.container_definitions)).linuxParameters), "tmpfs") &&
-      !contains(keys(one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).linuxParameters), "tmpfs")
+      one(one([for definition in jsondecode(aws_ecs_task_definition.api.container_definitions) : definition if definition.name == "api"]).mountPoints).containerPath == "/tmp" &&
+      one(one([for definition in jsondecode(aws_ecs_task_definition.worker.container_definitions) : definition if definition.name == "worker"]).mountPoints).containerPath == "/tmp" &&
+      !contains(keys(one([for definition in jsondecode(aws_ecs_task_definition.api.container_definitions) : definition if definition.name == "api"]).linuxParameters), "tmpfs") &&
+      !contains(keys(one([for definition in jsondecode(aws_ecs_task_definition.worker.container_definitions) : definition if definition.name == "worker"]).linuxParameters), "tmpfs")
     )
     error_message = "Fargate tasks must use supported writable /tmp bind mounts, not unsupported tmpfs."
   }
@@ -586,15 +599,15 @@ run "ecs_hardens_private_api_and_worker_services" {
   }
 
   assert {
-    condition     = one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).healthCheck.command == ["CMD", "python", "-m", "services.worker.healthcheck"]
+    condition     = one([for definition in jsondecode(aws_ecs_task_definition.worker.container_definitions) : definition if definition.name == "worker"]).healthCheck.command == ["CMD", "python", "-m", "services.worker.healthcheck"]
     error_message = "ECS must monitor the Worker heartbeat health check."
   }
 
   assert {
     condition = alltrue([
       for definition in [
-        one(jsondecode(aws_ecs_task_definition.api.container_definitions)),
-        one(jsondecode(aws_ecs_task_definition.worker.container_definitions)),
+        one([for definition in jsondecode(aws_ecs_task_definition.api.container_definitions) : definition if definition.name == "api"]),
+        one([for definition in jsondecode(aws_ecs_task_definition.worker.container_definitions) : definition if definition.name == "worker"]),
       ] : one([for value in definition.environment : value.value if value.name == "JOB_BACKEND"]) == "aws"
     ])
     error_message = "Both ECS services must explicitly select the durable AWS job backend."
@@ -602,19 +615,47 @@ run "ecs_hardens_private_api_and_worker_services" {
 
   assert {
     condition = (
-      one(one(jsondecode(aws_ecs_task_definition.api.container_definitions)).secrets).name == "API_AUTH_TOKEN" &&
-      one(one(jsondecode(aws_ecs_task_definition.api.container_definitions)).secrets).valueFrom == "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:llmops-test/api-auth-token-AbCdEf" &&
-      length(one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).secrets) == 0
+      one(one([for definition in jsondecode(aws_ecs_task_definition.api.container_definitions) : definition if definition.name == "api"]).secrets).name == "API_AUTH_TOKEN" &&
+      one(one([for definition in jsondecode(aws_ecs_task_definition.api.container_definitions) : definition if definition.name == "api"]).secrets).valueFrom == "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:llmops-test/api-auth-token-AbCdEf" &&
+      length(one([for definition in jsondecode(aws_ecs_task_definition.worker.container_definitions) : definition if definition.name == "worker"]).secrets) == 0
     )
     error_message = "Only the API task must receive the authentication token through ECS secret injection."
   }
 
   assert {
     condition = one([
-      for value in one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).environment :
+      for value in one([for definition in jsondecode(aws_ecs_task_definition.worker.container_definitions) : definition if definition.name == "worker"]).environment :
       value.value if value.name == "JOB_MAX_RECEIVE_COUNT"
     ]) == "5"
     error_message = "Worker retry accounting must match the SQS redrive policy."
+  }
+
+  assert {
+    condition = alltrue([
+      for definition in [
+        jsondecode(aws_ecs_task_definition.api.container_definitions),
+        jsondecode(aws_ecs_task_definition.worker.container_definitions),
+        ] : (
+        length(definition) == 2 &&
+        one([for container in definition : container if container.name == "aws-otel-collector"]).image == "public.ecr.aws/aws-observability/aws-otel-collector:v0.48.0" &&
+        one([for container in definition : container if container.name == "aws-otel-collector"]).essential &&
+        one([for container in definition : container if container.name == "aws-otel-collector"]).command == ["--config=/etc/ecs/ecs-default-config.yaml"]
+      )
+    ])
+    error_message = "Every task must run the pinned essential ADOT Collector sidecar."
+  }
+
+  assert {
+    condition = alltrue([
+      for definition in [
+        one([for container in jsondecode(aws_ecs_task_definition.api.container_definitions) : container if container.name == "api"]),
+        one([for container in jsondecode(aws_ecs_task_definition.worker.container_definitions) : container if container.name == "worker"]),
+        ] : (
+        one([for value in definition.environment : value.value if value.name == "OTEL_EXPORTER_OTLP_ENDPOINT"]) == "http://127.0.0.1:4317" &&
+        one([for dependency in definition.dependsOn : dependency if dependency.containerName == "aws-otel-collector"]).condition == "START"
+      )
+    ])
+    error_message = "Applications must export only to their local collector and start after it."
   }
 }
 

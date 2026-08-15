@@ -123,6 +123,7 @@ module "ecs" {
   api_desired_count         = var.api_desired_count
   worker_desired_count      = var.worker_desired_count
   log_retention_days        = var.log_retention_days
+  otel_trace_sample_ratio   = var.otel_trace_sample_ratio
   api_deployment_controller = "CODE_DEPLOY"
   tags                      = local.common_tags
 

@@ -17,4 +17,5 @@ worker_image_tag          = "bootstrap"
 api_desired_count         = 2
 worker_desired_count      = 2
 log_retention_days        = 90
+otel_trace_sample_ratio   = 1
 alarm_notification_emails = []

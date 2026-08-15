@@ -22,6 +22,7 @@ creates the foundation needed by later ECS work:
 - a CloudWatch operations dashboard, structured-log metric filters, and SLO alarms;
 - a customer-KMS-encrypted SNS topic with optional confirmed email notifications.
 - an empty Secrets Manager API-token container encrypted by a rotating customer KMS key.
+- a pinned ADOT Collector sidecar per task exporting OTLP traces to AWS X-Ray.
 
 The dev default uses one NAT gateway to control cost. Production should use
 `per_az` for zone-independent egress. NAT gateways incur hourly and data
@@ -135,6 +136,20 @@ Set `alarm_notification_emails` in the environment tfvars to enable email.
 Every recipient must confirm the SNS subscription before receiving alarm and
 recovery notifications. Threshold variables are validated and may be tuned per
 environment without editing the reusable module.
+
+## Distributed tracing
+
+Every API and Worker task runs
+`public.ecr.aws/aws-observability/aws-otel-collector:v0.48.0` as an essential
+sidecar with the AWS ECS default collector configuration. Application
+containers depend on the collector start event and export only to the loopback
+OTLP/gRPC endpoint. Collector logs share the service log group under the
+`adot` stream prefix.
+
+The API and Worker task roles may call only `xray:PutTraceSegments` and
+`xray:PutTelemetryRecords` for tracing. The execution and GitHub roles receive
+no X-Ray permission. Tune `otel_trace_sample_ratio` per environment; existing
+parent decisions always win because the SDK uses parent-based sampling.
 
 ## GitHub deployment variables
 

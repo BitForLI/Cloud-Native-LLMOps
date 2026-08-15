@@ -31,7 +31,9 @@ run "resilient_production_defaults" {
       output.production_safety_profile.data_deletion_protection &&
       output.production_safety_profile.load_balancer_protection &&
       output.production_safety_profile.api_alternate_target_group &&
-      output.production_safety_profile.encrypted_api_auth
+      output.production_safety_profile.encrypted_api_auth &&
+      output.production_safety_profile.trace_sample_ratio == 0.1 &&
+      endswith(output.production_safety_profile.adot_collector_image, ":v0.48.0")
     )
     error_message = "Production must preserve multi-AZ capacity, retention, deletion protection, and two target groups."
   }

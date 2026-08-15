@@ -4,6 +4,8 @@ from contextvars import ContextVar, Token
 from datetime import UTC, datetime
 from typing import Any
 
+from services.common.observability.tracing import current_trace_ids
+
 _request_id: ContextVar[str] = ContextVar("request_id", default="-")
 
 
@@ -44,6 +46,9 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "request_id": current_request_id(),
         }
+        trace_ids = current_trace_ids()
+        if trace_ids is not None:
+            payload["trace_id"], payload["span_id"] = trace_ids
         for field in self.structured_fields:
             if hasattr(record, field):
                 payload[field] = getattr(record, field)

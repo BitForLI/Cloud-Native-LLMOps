@@ -46,6 +46,8 @@ output "staging_safety_profile" {
     data_deletion_protection = module.database.job_table_deletion_protection_enabled
     load_balancer_protection = module.alb.deletion_protection_enabled
     encrypted_api_auth       = module.secrets.kms_key_rotation_enabled
+    trace_sample_ratio       = module.ecs.otel_trace_sample_ratio
+    adot_collector_image     = module.ecs.adot_collector_image
   }
 }
 

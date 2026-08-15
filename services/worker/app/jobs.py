@@ -37,6 +37,7 @@ class JobRecord:
 class JobTask:
     job_id: str
     prompt: str
+    trace_context: dict[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)

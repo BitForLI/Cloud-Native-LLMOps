@@ -111,15 +111,16 @@ module "ecs" {
   api_secrets = {
     API_AUTH_TOKEN = module.secrets.api_auth_secret_arn
   }
-  bedrock_model_id      = var.bedrock_model_id
-  artifact_bucket_name  = module.database.artifact_bucket_name
-  job_table_name        = module.database.job_table_name
-  inference_queue_url   = module.queue.queue_url
-  job_max_receive_count = var.job_max_receive_count
-  api_desired_count     = var.api_desired_count
-  worker_desired_count  = var.worker_desired_count
-  log_retention_days    = var.log_retention_days
-  tags                  = local.common_tags
+  bedrock_model_id        = var.bedrock_model_id
+  artifact_bucket_name    = module.database.artifact_bucket_name
+  job_table_name          = module.database.job_table_name
+  inference_queue_url     = module.queue.queue_url
+  job_max_receive_count   = var.job_max_receive_count
+  api_desired_count       = var.api_desired_count
+  worker_desired_count    = var.worker_desired_count
+  log_retention_days      = var.log_retention_days
+  otel_trace_sample_ratio = var.otel_trace_sample_ratio
+  tags                    = local.common_tags
 
   depends_on = [
     module.networking,

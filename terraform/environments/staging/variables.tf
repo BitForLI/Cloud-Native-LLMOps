@@ -213,6 +213,17 @@ variable "log_retention_days" {
   }
 }
 
+variable "otel_trace_sample_ratio" {
+  description = "Staging root-trace sampling ratio used for release verification."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.otel_trace_sample_ratio >= 0 && var.otel_trace_sample_ratio <= 1
+    error_message = "otel_trace_sample_ratio must be between 0 and 1."
+  }
+}
+
 variable "alarm_notification_emails" {
   description = "Addresses that receive staging alarm transitions."
   type        = set(string)

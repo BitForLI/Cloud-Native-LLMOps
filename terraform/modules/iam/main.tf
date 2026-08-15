@@ -118,6 +118,15 @@ locals {
     ]
     Resource = sort(tolist(var.kms_key_arns))
   }] : []
+  tracing_statement = {
+    Sid    = "PublishApplicationTraces"
+    Effect = "Allow"
+    Action = [
+      "xray:PutTelemetryRecords",
+      "xray:PutTraceSegments",
+    ]
+    Resource = ["*"]
+  }
 
   api_task_policy = jsonencode({
     Version = "2012-10-17"
@@ -154,6 +163,7 @@ locals {
           Resource = [var.job_table_arn]
         },
       ],
+      [local.tracing_statement],
       local.runtime_data_statements,
       local.runtime_kms_statements,
     )
@@ -194,6 +204,7 @@ locals {
           Resource = [var.job_table_arn]
         },
       ],
+      [local.tracing_statement],
       local.runtime_data_statements,
       local.runtime_kms_statements,
     )

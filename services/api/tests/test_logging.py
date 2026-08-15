@@ -9,6 +9,8 @@ from app.logging import (
     configure_logging,
     reset_request_id,
 )
+from opentelemetry import trace
+from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
 
 
 def test_json_formatter_emits_structured_request_fields():
@@ -60,3 +62,28 @@ def test_configure_logging_is_idempotent():
 def test_configure_logging_rejects_unknown_level():
     with pytest.raises(TypeError, match="Unsupported log level"):
         configure_logging("TRACE")
+
+
+def test_json_logs_include_active_trace_correlation_ids():
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(JsonFormatter())
+    logger = logging.getLogger("test.trace-correlation")
+    logger.handlers = [handler]
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    span = NonRecordingSpan(
+        SpanContext(
+            trace_id=0x1234567890ABCDEF1234567890ABCDEF,
+            span_id=0x1234567890ABCDEF,
+            is_remote=False,
+            trace_flags=TraceFlags.SAMPLED,
+        )
+    )
+
+    with trace.use_span(span):
+        logger.info("correlated")
+
+    payload = json.loads(stream.getvalue())
+    assert payload["trace_id"] == "1234567890abcdef1234567890abcdef"
+    assert payload["span_id"] == "1234567890abcdef"

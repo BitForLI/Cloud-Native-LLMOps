@@ -63,6 +63,8 @@ class WorkerSettings:
     bedrock_output_cost_per_million_tokens: float | None = None
     bedrock_connect_timeout_seconds: int = 5
     bedrock_read_timeout_seconds: int = 60
+    otel_exporter_otlp_endpoint: str | None = None
+    otel_trace_sample_ratio: float = 0.1
 
     def __post_init__(self) -> None:
         if self.max_workers < 1:
@@ -85,6 +87,19 @@ class WorkerSettings:
             raise ValueError(
                 "JOB_TABLE_NAME and INFERENCE_QUEUE_URL are required for JOB_BACKEND=aws"
             )
+        if self.job_backend == "aws" and self.otel_exporter_otlp_endpoint is None:
+            raise ValueError(
+                "OTEL_EXPORTER_OTLP_ENDPOINT is required for JOB_BACKEND=aws"
+            )
+        if self.otel_exporter_otlp_endpoint not in {
+            None,
+            "http://127.0.0.1:4317",
+        }:
+            raise ValueError(
+                "OTEL_EXPORTER_OTLP_ENDPOINT must target the ECS-local collector"
+            )
+        if not 0 <= self.otel_trace_sample_ratio <= 1:
+            raise ValueError("otel_trace_sample_ratio must be between 0 and 1")
         if not 0 <= self.sqs_wait_time_seconds <= 20:
             raise ValueError("sqs_wait_time_seconds must be between 0 and 20")
         if not 0 <= self.bedrock_temperature <= 1:
@@ -130,4 +145,6 @@ class WorkerSettings:
             bedrock_read_timeout_seconds=_positive_int(
                 "BEDROCK_READ_TIMEOUT_SECONDS", 60
             ),
+            otel_exporter_otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+            otel_trace_sample_ratio=float(os.getenv("OTEL_TRACE_SAMPLE_RATIO", "0.1")),
         )

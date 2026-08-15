@@ -22,6 +22,7 @@ def test_settings_have_safe_local_defaults():
 def test_settings_read_environment_variables(monkeypatch):
     monkeypatch.setenv("APP_ENV", "staging")
     monkeypatch.setenv("API_AUTH_TOKEN", "s" * 32)
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4317")
     monkeypatch.setenv("AWS_REGION", "us-east-1")
     monkeypatch.setenv("LLM_PROVIDER", "bedrock")
     monkeypatch.setenv("BEDROCK_MODEL_ID", "example-model")
@@ -35,6 +36,8 @@ def test_settings_read_environment_variables(monkeypatch):
 
     assert settings.app_env == "staging"
     assert settings.api_auth_token.get_secret_value() == "s" * 32
+    assert settings.otel_exporter_otlp_endpoint == "http://127.0.0.1:4317"
+    assert settings.otel_trace_sample_ratio == 0.1
     assert settings.aws_region == "us-east-1"
     assert settings.llm_provider == "bedrock"
     assert settings.bedrock_model_id == "example-model"
@@ -85,12 +88,40 @@ def test_deployed_environments_require_strong_api_token(app_env):
         Settings(app_env=app_env, _env_file=None)
 
     with pytest.raises(ValidationError):
-        Settings(app_env=app_env, api_auth_token="short", _env_file=None)
+        Settings(
+            app_env=app_env,
+            api_auth_token="short",
+            otel_exporter_otlp_endpoint="http://127.0.0.1:4317",
+            _env_file=None,
+        )
 
     with pytest.raises(ValidationError, match="URL-safe"):
-        Settings(app_env=app_env, api_auth_token="x" * 31 + "\n", _env_file=None)
+        Settings(
+            app_env=app_env,
+            api_auth_token="x" * 31 + "\n",
+            otel_exporter_otlp_endpoint="http://127.0.0.1:4317",
+            _env_file=None,
+        )
 
-    settings = Settings(app_env=app_env, api_auth_token="x" * 32, _env_file=None)
+    settings = Settings(
+        app_env=app_env,
+        api_auth_token="x" * 32,
+        otel_exporter_otlp_endpoint="http://127.0.0.1:4317",
+        _env_file=None,
+    )
     assert settings.api_auth_token.get_secret_value() == "x" * 32
     assert "api_auth_token" not in settings.dependency_cache_json()
     assert "x" * 32 not in settings.dependency_cache_json()
+
+
+def test_deployed_environments_reject_missing_or_remote_trace_collector():
+    with pytest.raises(ValidationError, match="OTEL_EXPORTER_OTLP_ENDPOINT"):
+        Settings(app_env="production", api_auth_token="x" * 32, _env_file=None)
+
+    with pytest.raises(ValidationError, match="ECS-local collector"):
+        Settings(
+            app_env="production",
+            api_auth_token="x" * 32,
+            otel_exporter_otlp_endpoint="https://telemetry.example.com:4317",
+            _env_file=None,
+        )

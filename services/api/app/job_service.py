@@ -10,6 +10,12 @@ from fastapi import Depends
 from app.config import Settings, get_settings
 from app.metrics import Metrics, get_metrics
 from app.providers.base import LLMProvider, LLMProviderError
+from services.common.observability.tracing import (
+    inference_span,
+    inject_trace_context,
+    job_span,
+    mark_current_span_error,
+)
 from services.worker.app.aws_jobs import (
     DurableJobStoreError,
     DynamoDBJobRepository,
@@ -78,7 +84,13 @@ class LocalJobService:
             try:
                 job = self._repository.create()
                 self._providers[job.job_id] = provider
-                self._queue.put(JobTask(job_id=job.job_id, prompt=prompt))
+                self._queue.put(
+                    JobTask(
+                        job_id=job.job_id,
+                        prompt=prompt,
+                        trace_context=inject_trace_context(),
+                    )
+                )
                 return job
             except Exception:
                 self._capacity.release()
@@ -114,25 +126,46 @@ class LocalJobService:
         try:
             with self._state_lock:
                 provider = self._providers.pop(task.job_id)
-            self._repository.mark_running(task.job_id)
-            outcome = process_inference_job(task, provider.generate)
-            self._repository.mark_succeeded(task.job_id, outcome)
-            if outcome.input_tokens is not None and outcome.output_tokens is not None:
-                self._metrics.record_token_usage(
-                    outcome.input_tokens, outcome.output_tokens
-                )
-            if outcome.estimated_cost is not None:
-                self._metrics.record_estimated_cost(outcome.estimated_cost)
-        except Exception as error:  # noqa: BLE001 - final background-task boundary
+            with job_span(task.job_id, provider.model_id, task.trace_context):
+                try:
+                    self._repository.mark_running(task.job_id)
+                    with inference_span(provider.model_id):
+                        try:
+                            outcome = process_inference_job(task, provider.generate)
+                        except Exception as error:  # noqa: BLE001 - telemetry boundary
+                            mark_current_span_error(error)
+                            raise_error = error
+                        else:
+                            raise_error = None
+                    if raise_error is not None:
+                        raise raise_error
+                    self._repository.mark_succeeded(task.job_id, outcome)
+                    if (
+                        outcome.input_tokens is not None
+                        and outcome.output_tokens is not None
+                    ):
+                        self._metrics.record_token_usage(
+                            outcome.input_tokens, outcome.output_tokens
+                        )
+                    if outcome.estimated_cost is not None:
+                        self._metrics.record_estimated_cost(outcome.estimated_cost)
+                except Exception as error:  # noqa: BLE001 - background-task boundary
+                    mark_current_span_error(error)
+                    self._metrics.record_model_error()
+                    error_code = (
+                        "provider_error"
+                        if isinstance(error, LLMProviderError)
+                        else "internal_error"
+                    )
+                    self._repository.mark_failed(
+                        task.job_id,
+                        handle_job_failure(task, error, error_code=error_code),
+                    )
+        except Exception as error:  # noqa: BLE001 - executor safety boundary
             self._metrics.record_model_error()
-            error_code = (
-                "provider_error"
-                if isinstance(error, LLMProviderError)
-                else "internal_error"
-            )
             self._repository.mark_failed(
                 task.job_id,
-                handle_job_failure(task, error, error_code=error_code),
+                handle_job_failure(task, error, error_code="internal_error"),
             )
         finally:
             self._metrics.record_llm_latency((time.perf_counter() - started) * 1000)
@@ -154,7 +187,7 @@ class AwsJobService:
     def submit(self, prompt: str, provider: LLMProvider) -> JobRecord:
         del provider  # The independent worker owns model invocation in AWS mode.
         record = self._repository.create()
-        task = JobTask(record.job_id, prompt)
+        task = JobTask(record.job_id, prompt, trace_context=inject_trace_context())
         try:
             self._queue.publish(task)
         except DurableJobStoreError:

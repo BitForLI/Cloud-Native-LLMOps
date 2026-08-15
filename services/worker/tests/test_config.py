@@ -28,3 +28,21 @@ def test_worker_settings_reject_invalid_worker_count(monkeypatch, value):
 def test_worker_settings_reject_history_smaller_than_queue():
     with pytest.raises(ValueError, match="at least"):
         WorkerSettings(max_pending_jobs=2, max_stored_jobs=1)
+
+
+def test_aws_worker_requires_local_trace_collector():
+    with pytest.raises(ValueError, match="OTEL_EXPORTER_OTLP_ENDPOINT"):
+        WorkerSettings(
+            job_backend="aws",
+            job_table_name="jobs",
+            inference_queue_url="https://sqs.example/jobs",
+        )
+
+    settings = WorkerSettings(
+        job_backend="aws",
+        job_table_name="jobs",
+        inference_queue_url="https://sqs.example/jobs",
+        otel_exporter_otlp_endpoint="http://127.0.0.1:4317",
+        otel_trace_sample_ratio=0.25,
+    )
+    assert settings.otel_trace_sample_ratio == 0.25

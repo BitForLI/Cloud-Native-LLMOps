@@ -47,7 +47,9 @@ run "production_like_staging_defaults" {
       output.staging_safety_profile.log_retention_days >= 90 &&
       output.staging_safety_profile.data_deletion_protection &&
       output.staging_safety_profile.load_balancer_protection &&
-      output.staging_safety_profile.encrypted_api_auth
+      output.staging_safety_profile.encrypted_api_auth &&
+      output.staging_safety_profile.trace_sample_ratio == 1 &&
+      endswith(output.staging_safety_profile.adot_collector_image, ":v0.48.0")
     )
     error_message = "Staging safety controls must remain production-like."
   }

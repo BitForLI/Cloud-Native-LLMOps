@@ -185,6 +185,17 @@ variable "log_retention_days" {
   default     = 30
 }
 
+variable "otel_trace_sample_ratio" {
+  description = "Development root-trace sampling ratio."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.otel_trace_sample_ratio >= 0 && var.otel_trace_sample_ratio <= 1
+    error_message = "otel_trace_sample_ratio must be between 0 and 1."
+  }
+}
+
 variable "alarm_notification_emails" {
   description = "Email addresses that confirm and receive CloudWatch alarm notifications."
   type        = set(string)

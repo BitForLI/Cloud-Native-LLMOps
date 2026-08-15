@@ -42,3 +42,13 @@ output "worker_log_group_name" {
   description = "CloudWatch log group for Worker container logs."
   value       = aws_cloudwatch_log_group.worker.name
 }
+
+output "adot_collector_image" {
+  description = "Version-pinned ADOT Collector image shared by API and Worker tasks."
+  value       = var.adot_collector_image
+}
+
+output "otel_trace_sample_ratio" {
+  description = "Configured root-trace sampling ratio."
+  value       = var.otel_trace_sample_ratio
+}

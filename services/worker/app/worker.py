@@ -15,6 +15,12 @@ from services.common.observability.emf import (
     configure_emf_logging,
     emit_inference_metrics,
 )
+from services.common.observability.tracing import (
+    configure_tracing,
+    inference_span,
+    job_span,
+    mark_current_span_error,
+)
 from services.worker.app.aws_jobs import (
     DurableJobStoreError,
     DynamoDBJobRepository,
@@ -63,6 +69,14 @@ class DurableJobProcessor:
         self._environment = environment
 
     def process(self, message: ReceivedJob) -> None:
+        with job_span(
+            message.task.job_id,
+            self._provider.model_id,
+            message.task.trace_context,
+        ):
+            self._process_in_span(message)
+
+    def _process_in_span(self, message: ReceivedJob) -> None:
         record = self._repository.get(message.task.job_id)
         if record.status is JobStatus.SUCCEEDED:
             self._queue.delete(message.receipt_handle)
@@ -71,13 +85,26 @@ class DurableJobProcessor:
         if record.status is JobStatus.FAILED:
             # Final failures remain unacknowledged so the queue redrive policy
             # preserves their message in the DLQ for operational inspection.
-            logger.warning("Final failed job %s is awaiting DLQ redrive.", record.job_id)
+            logger.warning(
+                "Final failed job %s is awaiting DLQ redrive.", record.job_id
+            )
             return
 
         self._repository.mark_running(message.task.job_id)
         started = time.perf_counter()
         try:
-            outcome = process_inference_job(message.task, self._provider.generate)
+            with inference_span(self._provider.model_id):
+                try:
+                    outcome = process_inference_job(
+                        message.task, self._provider.generate
+                    )
+                except Exception as error:  # noqa: BLE001 - trace redaction boundary
+                    mark_current_span_error(error)
+                    inference_error = error
+                else:
+                    inference_error = None
+            if inference_error is not None:
+                raise inference_error
         except Exception as error:  # noqa: BLE001 - delivery safety boundary
             latency_ms = (time.perf_counter() - started) * 1000
             error_code = (
@@ -238,6 +265,12 @@ def main() -> None:
     )
     settings = WorkerSettings.from_env()
     configure_emf_logging()
+    configure_tracing(
+        service_name="llmops-worker",
+        environment=settings.app_env,
+        endpoint=settings.otel_exporter_otlp_endpoint,
+        sample_ratio=settings.otel_trace_sample_ratio,
+    )
     stop_event = Event()
     _install_signal_handlers(stop_event)
     if settings.job_backend == "aws":
@@ -250,9 +283,7 @@ def main() -> None:
             "dynamodb", region_name=settings.aws_region, config=config
         )
         sqs = boto3.client("sqs", region_name=settings.aws_region, config=config)
-        repository = DynamoDBJobRepository(
-            dynamodb, settings.job_table_name or ""
-        )
+        repository = DynamoDBJobRepository(dynamodb, settings.job_table_name or "")
         queue = SQSJobQueue(sqs, settings.inference_queue_url or "")
         processor = DurableJobProcessor(
             repository,

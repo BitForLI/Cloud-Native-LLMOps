@@ -8,7 +8,7 @@ Production-oriented LLM service platform: automated quality gates, container del
 GitHub PR -> lint / pytest / LLM evaluation / security scan
    -> main -> Docker build -> Amazon ECR -> ECS Fargate -> Bedrock
                                              |       |       |
-                                          CloudWatch  S3  DynamoDB
+                                      CloudWatch/X-Ray  S3  DynamoDB
 ```
 
 ## Repository layout
@@ -49,7 +49,8 @@ AWS access keys in `.env` or commit them to the repository.
 
 Every HTTP response includes `X-Request-ID`. Application logs are JSON and
 record the request ID, method, route template, status, latency, selected model,
-and error type. Prompt and response content are deliberately excluded.
+error type, and active OpenTelemetry trace/span IDs. Prompt and response
+content are deliberately excluded.
 
 `GET /metrics` exposes the process-local request/error rate, LLM P50/P95
 latency, model error rate, token totals, and accumulated estimated cost. Cost
@@ -65,6 +66,19 @@ error rates, P95 latency, resource saturation, queue age, and dead letters.
 Alarm and recovery notifications use an SNS topic protected by a rotating
 customer-managed KMS key; optional email recipients must confirm their SNS
 subscriptions before alerts are delivered.
+
+OpenTelemetry instruments FastAPI and botocore calls. API and Worker task
+definitions each include an essential, version-pinned AWS Distro for
+OpenTelemetry Collector sidecar. Applications send OTLP/gRPC only to
+`127.0.0.1:4317`; the collector converts and exports spans to AWS X-Ray using
+the task role. Health/readiness probes are excluded, parent sampling decisions
+are preserved, staging samples all release traffic, and production defaults to
+10% root sampling.
+
+Asynchronous jobs carry only the bounded `X-Amzn-Trace-Id` context in the
+versioned SQS envelope. The Worker continues the originating API trace through
+DynamoDB, SQS, and Bedrock operations. Custom LLM and job spans exclude prompts,
+responses, credentials, and exception messages from attributes and events.
 
 ### API authentication and secret handling
 
@@ -122,7 +136,8 @@ durable application backend for API and Worker tasks.
 IAM separates API producer, Worker consumer, ECS image/log delivery, and GitHub
 deployment permissions. GitHub uses short-lived OIDC credentials restricted to
 this repository's immutable identity and `master`; no static AWS access keys are
-required.
+required. API and Worker task roles grant their local collectors only the two
+X-Ray write actions required to publish segments and telemetry records.
 
 ECS Fargate runs the API and Worker in private subnets without public IPs. The
 public ALB reaches only API port `8000`; task definitions enforce non-root users,

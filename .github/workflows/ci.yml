@@ -18,7 +18,7 @@ jobs:
       - name: Lint
         run: ruff check services/api services/common services/worker evals .github/tests
       - name: Unit tests
-        run: PYTHONPATH=services/api pytest services/api/tests services/worker/tests evals .github/tests
+        run: PYTHONPATH=services/api pytest services/api/tests services/worker/tests services/common evals .github/tests
       - name: LLM evaluation quality gate
         run: python -m evals.run_eval
       - name: Dependency security scan

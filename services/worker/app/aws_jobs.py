@@ -20,8 +20,10 @@ from services.worker.app.jobs import (
     JobTask,
 )
 
-MESSAGE_VERSION = 1
+MESSAGE_VERSION = 2
 MAX_PROMPT_LENGTH = 8000
+TRACE_HEADER = "X-Amzn-Trace-Id"
+MAX_TRACE_HEADER_LENGTH = 256
 
 
 class DurableJobStoreError(RuntimeError):
@@ -49,8 +51,14 @@ def serialize_task(task: JobTask) -> str:
     """Create a versioned payload; callers must never log the returned string."""
 
     _validate_task(task.job_id, task.prompt)
+    trace_context = _validate_trace_context(task.trace_context)
     return json.dumps(
-        {"version": MESSAGE_VERSION, "job_id": task.job_id, "prompt": task.prompt},
+        {
+            "version": MESSAGE_VERSION,
+            "job_id": task.job_id,
+            "prompt": task.prompt,
+            "trace_context": trace_context,
+        },
         separators=(",", ":"),
         ensure_ascii=False,
     )
@@ -61,15 +69,26 @@ def deserialize_task(body: str) -> JobTask:
         payload = json.loads(body)
     except (json.JSONDecodeError, TypeError) as exc:
         raise ValueError("message body is not valid JSON") from exc
-    if not isinstance(payload, dict) or set(payload) != {"version", "job_id", "prompt"}:
+    if not isinstance(payload, dict):
+        raise TypeError("message body has an unsupported schema")
+    version = payload.get("version")
+    expected_fields = (
+        {"version", "job_id", "prompt"}
+        if version == 1
+        else {"version", "job_id", "prompt", "trace_context"}
+    )
+    if set(payload) != expected_fields:
         raise ValueError("message body has an unsupported schema")
-    if payload["version"] != MESSAGE_VERSION:
+    if version not in {1, MESSAGE_VERSION}:
         raise ValueError("message version is unsupported")
     job_id, prompt = payload["job_id"], payload["prompt"]
     if not isinstance(job_id, str) or not isinstance(prompt, str):
         raise TypeError("message fields have invalid types")
     _validate_task(job_id, prompt)
-    return JobTask(job_id=job_id, prompt=prompt)
+    trace_context = (
+        None if version == 1 else _validate_trace_context(payload["trace_context"])
+    )
+    return JobTask(job_id=job_id, prompt=prompt, trace_context=trace_context)
 
 
 def _validate_task(job_id: str, prompt: str) -> None:
@@ -79,6 +98,23 @@ def _validate_task(job_id: str, prompt: str) -> None:
         raise ValueError("job_id must be a UUID") from exc
     if not prompt.strip() or len(prompt) > MAX_PROMPT_LENGTH:
         raise ValueError("prompt length is invalid")
+
+
+def _validate_trace_context(value: object) -> dict[str, str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {TRACE_HEADER}:
+        raise ValueError("trace context has an unsupported schema")
+    header = value.get(TRACE_HEADER)
+    if (
+        not isinstance(header, str)
+        or not header
+        or len(header) > MAX_TRACE_HEADER_LENGTH
+        or "\r" in header
+        or "\n" in header
+    ):
+        raise ValueError("trace context header is invalid")
+    return {TRACE_HEADER: header}
 
 
 class SQSJobQueue:
@@ -132,7 +168,9 @@ class SQSJobQueue:
                 ReceiptHandle=receipt_handle,
             )
         except (BotoCoreError, ClientError) as exc:
-            raise DurableJobStoreError("Unable to acknowledge the inference job.") from exc
+            raise DurableJobStoreError(
+                "Unable to acknowledge the inference job."
+            ) from exc
 
     def check_ready(self) -> None:
         try:
@@ -147,7 +185,9 @@ class SQSJobQueue:
 class DynamoDBJobRepository:
     """Conditional state transitions make Standard SQS redelivery idempotent."""
 
-    def __init__(self, client: BaseClient, table_name: str, ttl_seconds: int = 604800) -> None:
+    def __init__(
+        self, client: BaseClient, table_name: str, ttl_seconds: int = 604800
+    ) -> None:
         if not table_name:
             raise ValueError("table_name must not be empty")
         if ttl_seconds < 3600:
@@ -251,7 +291,10 @@ class DynamoDBJobRepository:
     def check_ready(self) -> None:
         try:
             response = self._client.describe_table(TableName=self._table_name)
-            if response.get("Table", {}).get("TableStatus") not in {"ACTIVE", "UPDATING"}:
+            if response.get("Table", {}).get("TableStatus") not in {
+                "ACTIVE",
+                "UPDATING",
+            }:
                 raise DurableJobStoreError("The job table is not active.")
         except DurableJobStoreError:
             raise
@@ -283,13 +326,17 @@ class DynamoDBJobRepository:
         try:
             return self._record_from_item(response["Attributes"])
         except (KeyError, TypeError, ValueError) as exc:
-            raise DurableJobStoreError("Updated inference job data is invalid.") from exc
+            raise DurableJobStoreError(
+                "Updated inference job data is invalid."
+            ) from exc
 
     @staticmethod
     def _raise_client_error(exc: ClientError, duplicate: bool = False) -> None:
         code = exc.response.get("Error", {}).get("Code")
         if code == "ConditionalCheckFailedException":
-            message = "job_id already exists" if duplicate else "invalid job state transition"
+            message = (
+                "job_id already exists" if duplicate else "invalid job state transition"
+            )
             raise InvalidJobTransitionError(message) from exc
         raise DurableJobStoreError("The job store operation failed.") from exc
 

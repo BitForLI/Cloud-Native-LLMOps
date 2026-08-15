@@ -12,3 +12,7 @@ scoped; wildcard repository inputs are rejected.
 Promotion-only roles may call `PutImage` but cannot upload new layers. In
 production, direct API `UpdateService` access is removed so CodeDeploy cannot
 be bypassed; GitHub can still roll the headless Worker safely.
+
+API and Worker task roles grant only the resource-agnostic X-Ray write actions
+required by their co-located ADOT Collector. They do not grant remote sampling,
+trace reads, or X-Ray administration.

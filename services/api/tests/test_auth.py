@@ -3,7 +3,12 @@ from app.main import app
 
 
 def protected_settings() -> Settings:
-    return Settings(app_env="production", api_auth_token="a" * 32, _env_file=None)
+    return Settings(
+        app_env="production",
+        api_auth_token="a" * 32,
+        otel_exporter_otlp_endpoint="http://127.0.0.1:4317",
+        _env_file=None,
+    )
 
 
 def test_health_and_readiness_remain_available_without_credentials(client):

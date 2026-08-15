@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.responses import JSONResponse
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from pydantic import BaseModel, Field
 
 from app.auth import require_api_key
@@ -19,6 +20,11 @@ from services.common.observability.emf import (
     configure_emf_logging,
     emit_inference_metrics,
 )
+from services.common.observability.tracing import (
+    configure_tracing,
+    inference_span,
+    mark_current_span_error,
+)
 from services.worker.app.aws_jobs import DurableJobStoreError
 from services.worker.app.jobs import (
     JobCapacityError,
@@ -27,10 +33,23 @@ from services.worker.app.jobs import (
     JobStatus,
 )
 
-configure_logging(get_settings().log_level)
+settings = get_settings()
+configure_logging(settings.log_level)
 configure_emf_logging()
 app = FastAPI(title="LLMOps Inference API", version="0.1.0")
 app.middleware("http")(request_context_middleware)
+tracer_provider = configure_tracing(
+    service_name="llmops-api",
+    environment=settings.app_env,
+    endpoint=settings.otel_exporter_otlp_endpoint,
+    sample_ratio=settings.otel_trace_sample_ratio,
+)
+if tracer_provider is not None:
+    FastAPIInstrumentor.instrument_app(
+        app,
+        tracer_provider=tracer_provider,
+        excluded_urls=".*/health,.*/ready",
+    )
 
 
 class GenerateRequest(BaseModel):
@@ -241,8 +260,16 @@ def generate(
     started = time.perf_counter()
     result = None
     model_error = False
+    provider_error: Exception | None = None
     try:
-        result = provider.generate(payload.prompt)
+        with inference_span(provider.model_id):
+            try:
+                result = provider.generate(payload.prompt)
+            except Exception as error:  # noqa: BLE001 - telemetry redaction boundary
+                mark_current_span_error(error)
+                provider_error = error
+        if provider_error is not None:
+            raise provider_error
     except Exception:
         model_error = True
         metrics.record_model_error()

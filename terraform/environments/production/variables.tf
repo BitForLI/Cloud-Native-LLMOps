@@ -207,6 +207,17 @@ variable "log_retention_days" {
   }
 }
 
+variable "otel_trace_sample_ratio" {
+  description = "Production root-trace sampling ratio; parent decisions are preserved."
+  type        = number
+  default     = 0.1
+
+  validation {
+    condition     = var.otel_trace_sample_ratio >= 0 && var.otel_trace_sample_ratio <= 1
+    error_message = "otel_trace_sample_ratio must be between 0 and 1."
+  }
+}
+
 variable "blue_termination_wait_minutes" {
   description = "Post-shift bake period before blue API tasks terminate."
   type        = number
