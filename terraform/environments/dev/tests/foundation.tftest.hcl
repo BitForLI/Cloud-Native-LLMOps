@@ -798,8 +798,12 @@ run "monitoring_covers_platform_and_llm_failure_modes" {
   }
 
   assert {
-    condition     = length(jsondecode(aws_cloudwatch_dashboard.this.dashboard_body).widgets) == 6
-    error_message = "The operations dashboard must contain all six platform signal groups."
+    condition = (
+      length(jsondecode(aws_cloudwatch_dashboard.this.dashboard_body).widgets) == 6 &&
+      strcontains(aws_cloudwatch_dashboard.this.dashboard_body, "RunningTaskCount") &&
+      strcontains(aws_cloudwatch_dashboard.this.dashboard_body, "DesiredTaskCount")
+    )
+    error_message = "The operations dashboard must contain all six signal groups and live scaling capacity."
   }
 
   assert {
@@ -855,4 +859,81 @@ run "rejects_mutable_latest_image_tag" {
   }
 
   expect_failures = [var.api_image_tag]
+}
+
+run "ecs_autoscaling_tracks_api_utilization_and_worker_backlog" {
+  command = apply
+
+  module {
+    source = "../../modules/autoscaling"
+  }
+
+  variables {
+    name                           = "llmops-test"
+    cluster_name                   = "llmops-test"
+    api_service_name               = "llmops-test-api"
+    worker_service_name            = "llmops-test-worker"
+    queue_name                     = "llmops-test-inference"
+    api_min_capacity               = 2
+    api_max_capacity               = 8
+    worker_min_capacity            = 2
+    worker_max_capacity            = 20
+    worker_backlog_target_per_task = 3
+  }
+
+  assert {
+    condition = (
+      aws_appautoscaling_target.api.resource_id == "service/llmops-test/llmops-test-api" &&
+      aws_appautoscaling_target.api.min_capacity == 2 &&
+      aws_appautoscaling_target.api.max_capacity == 8 &&
+      aws_appautoscaling_target.worker.resource_id == "service/llmops-test/llmops-test-worker" &&
+      aws_appautoscaling_target.worker.min_capacity == 2 &&
+      aws_appautoscaling_target.worker.max_capacity == 20
+    )
+    error_message = "ECS services must retain explicit availability floors and cost ceilings."
+  }
+
+  assert {
+    condition = (
+      one(one(aws_appautoscaling_policy.api_cpu.target_tracking_scaling_policy_configuration).predefined_metric_specification).predefined_metric_type == "ECSServiceAverageCPUUtilization" &&
+      one(one(aws_appautoscaling_policy.api_memory.target_tracking_scaling_policy_configuration).predefined_metric_specification).predefined_metric_type == "ECSServiceAverageMemoryUtilization" &&
+      one(aws_appautoscaling_policy.api_cpu.target_tracking_scaling_policy_configuration).scale_out_cooldown < one(aws_appautoscaling_policy.api_cpu.target_tracking_scaling_policy_configuration).scale_in_cooldown
+    )
+    error_message = "API autoscaling must react to CPU and memory while scaling in conservatively."
+  }
+
+  assert {
+    condition = (
+      one([for query in one(one(aws_appautoscaling_policy.worker_backlog.target_tracking_scaling_policy_configuration).customized_metric_specification).metrics : query if query.id == "backlog_per_task"]).expression == "backlog / running" &&
+      one(one([for query in one(one(aws_appautoscaling_policy.worker_backlog.target_tracking_scaling_policy_configuration).customized_metric_specification).metrics : query if query.id == "backlog"]).metric_stat).metric[0].namespace == "AWS/SQS" &&
+      one(one([for query in one(one(aws_appautoscaling_policy.worker_backlog.target_tracking_scaling_policy_configuration).customized_metric_specification).metrics : query if query.id == "running"]).metric_stat).metric[0].namespace == "ECS/ContainerInsights" &&
+      one(aws_appautoscaling_policy.worker_backlog.target_tracking_scaling_policy_configuration).target_value == 3
+    )
+    error_message = "Worker autoscaling must target SQS backlog per running ECS task."
+  }
+}
+
+run "autoscaling_rejects_capacity_ceiling_below_floor" {
+  command = plan
+
+  module {
+    source = "../../modules/autoscaling"
+  }
+
+  variables {
+    name                = "llmops-test"
+    cluster_name        = "llmops-test"
+    api_service_name    = "llmops-test-api"
+    worker_service_name = "llmops-test-worker"
+    queue_name          = "llmops-test-inference"
+    api_min_capacity    = 3
+    api_max_capacity    = 2
+    worker_min_capacity = 2
+    worker_max_capacity = 1
+  }
+
+  expect_failures = [
+    aws_appautoscaling_target.api,
+    aws_appautoscaling_target.worker,
+  ]
 }

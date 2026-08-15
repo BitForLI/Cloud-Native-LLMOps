@@ -33,7 +33,12 @@ run "resilient_production_defaults" {
       output.production_safety_profile.api_alternate_target_group &&
       output.production_safety_profile.encrypted_api_auth &&
       output.production_safety_profile.trace_sample_ratio == 0.1 &&
-      endswith(output.production_safety_profile.adot_collector_image, ":v0.48.0")
+      endswith(output.production_safety_profile.adot_collector_image, ":v0.48.0") &&
+      output.production_safety_profile.autoscaling_bounds.api.min == 3 &&
+      output.production_safety_profile.autoscaling_bounds.api.max == 12 &&
+      output.production_safety_profile.autoscaling_bounds.worker.min == 2 &&
+      output.production_safety_profile.autoscaling_bounds.worker.max == 30 &&
+      output.production_safety_profile.worker_backlog_target == 2
     )
     error_message = "Production must preserve multi-AZ capacity, retention, deletion protection, and two target groups."
   }

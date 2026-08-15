@@ -314,7 +314,8 @@ resource "aws_ecs_service" "api" {
 
   lifecycle {
     # GitHub Actions owns application revisions after Terraform bootstraps the service.
-    ignore_changes = [task_definition]
+    # Application Auto Scaling owns desired_count after the service is registered.
+    ignore_changes = [task_definition, desired_count]
   }
 
   network_configuration {
@@ -351,7 +352,8 @@ resource "aws_ecs_service" "worker" {
 
   lifecycle {
     # GitHub Actions deploys API and Worker from the same immutable commit SHA.
-    ignore_changes = [task_definition]
+    # Application Auto Scaling owns desired_count after the service is registered.
+    ignore_changes = [task_definition, desired_count]
   }
 
   network_configuration {

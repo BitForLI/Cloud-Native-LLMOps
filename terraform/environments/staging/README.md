@@ -5,6 +5,10 @@ two API and Worker tasks, deletion-protected DynamoDB and ALB resources, 90-day
 logs, HTTPS-only application traffic, full alarms, and artifact-promotion-only
 GitHub permissions.
 
+Application Auto Scaling preserves the two-task availability floor while
+allowing API capacity to reach six tasks and Worker capacity to reach ten. The
+Worker targets two visible SQS inference jobs per running task.
+
 Copy the examples, replace account-specific values, then initialize and apply:
 
 ```bash

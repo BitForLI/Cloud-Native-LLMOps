@@ -179,6 +179,39 @@ variable "worker_desired_count" {
   default     = 1
 }
 
+variable "api_max_capacity" {
+  description = "Maximum API tasks allowed by development autoscaling."
+  type        = number
+  default     = 3
+
+  validation {
+    condition     = var.api_max_capacity >= 1 && floor(var.api_max_capacity) == var.api_max_capacity
+    error_message = "api_max_capacity must be a positive integer."
+  }
+}
+
+variable "worker_max_capacity" {
+  description = "Maximum Worker tasks allowed by development autoscaling."
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.worker_max_capacity >= 1 && floor(var.worker_max_capacity) == var.worker_max_capacity
+    error_message = "worker_max_capacity must be a positive integer."
+  }
+}
+
+variable "worker_backlog_target_per_task" {
+  description = "Visible inference jobs targeted per running development Worker."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.worker_backlog_target_per_task > 0 && var.worker_backlog_target_per_task <= 1000
+    error_message = "worker_backlog_target_per_task must be greater than zero and at most 1000."
+  }
+}
+
 variable "log_retention_days" {
   description = "CloudWatch container log retention."
   type        = number

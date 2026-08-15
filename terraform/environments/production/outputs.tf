@@ -44,6 +44,8 @@ output "production_safety_profile" {
     encrypted_api_auth         = module.secrets.kms_key_rotation_enabled
     trace_sample_ratio         = module.ecs.otel_trace_sample_ratio
     adot_collector_image       = module.ecs.adot_collector_image
+    autoscaling_bounds         = module.autoscaling.capacity_bounds
+    worker_backlog_target      = module.autoscaling.worker_backlog_target_per_task
   }
 }
 

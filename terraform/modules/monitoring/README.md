@@ -3,6 +3,8 @@
 Creates a customer-KMS-encrypted SNS alarm topic, optional email subscriptions, CloudWatch
 log-derived HTTP metrics, a production dashboard, and alarms for ALB errors and
 latency, ECS saturation, SQS backlog/DLQ depth, and LLM error/latency signals.
+The ECS panel also correlates running and desired task counts with utilization
+so scaling activity is visible without leaving the operations dashboard.
 Blue/green environments monitor both target groups independently and export a
 focused, fail-closed alarm set for release controllers.
 

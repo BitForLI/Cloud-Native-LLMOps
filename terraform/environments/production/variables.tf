@@ -196,6 +196,39 @@ variable "worker_desired_count" {
   }
 }
 
+variable "api_max_capacity" {
+  description = "Maximum API tasks allowed by production autoscaling."
+  type        = number
+  default     = 12
+
+  validation {
+    condition     = var.api_max_capacity >= 2 && floor(var.api_max_capacity) == var.api_max_capacity
+    error_message = "Production API maximum capacity must be an integer of at least two."
+  }
+}
+
+variable "worker_max_capacity" {
+  description = "Maximum Worker tasks allowed by production autoscaling."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.worker_max_capacity >= 2 && floor(var.worker_max_capacity) == var.worker_max_capacity
+    error_message = "Production Worker maximum capacity must be an integer of at least two."
+  }
+}
+
+variable "worker_backlog_target_per_task" {
+  description = "Visible inference jobs targeted per running production Worker."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.worker_backlog_target_per_task > 0 && var.worker_backlog_target_per_task <= 1000
+    error_message = "worker_backlog_target_per_task must be greater than zero and at most 1000."
+  }
+}
+
 variable "log_retention_days" {
   description = "Production CloudWatch Logs retention."
   type        = number

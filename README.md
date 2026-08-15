@@ -9,6 +9,8 @@ GitHub PR -> lint / pytest / LLM evaluation / security scan
    -> main -> Docker build -> Amazon ECR -> ECS Fargate -> Bedrock
                                              |       |       |
                                       CloudWatch/X-Ray  S3  DynamoDB
+                                             |
+                              Application Auto Scaling <- SQS backlog
 ```
 
 ## Repository layout
@@ -60,8 +62,8 @@ Embedded Metric Format events for request count, model errors, latency, token
 usage, and estimated cost.
 
 The Terraform monitoring module builds a six-panel CloudWatch operations
-dashboard spanning ALB traffic/latency, ECS CPU/memory, SQS backlog/DLQ, LLM
-signals, and recent errors. Production-style 3-of-5 alarms cover HTTP and model
+dashboard spanning ALB traffic/latency, ECS CPU/memory/task capacity, SQS
+backlog/DLQ, LLM signals, and recent errors. Production-style 3-of-5 alarms cover HTTP and model
 error rates, P95 latency, resource saturation, queue age, and dead letters.
 Alarm and recovery notifications use an SNS topic protected by a rotating
 customer-managed KMS key; optional email recipients must confirm their SNS
@@ -79,6 +81,21 @@ Asynchronous jobs carry only the bounded `X-Amzn-Trace-Id` context in the
 versioned SQS envelope. The Worker continues the originating API trace through
 DynamoDB, SQS, and Bedrock operations. Custom LLM and job spans exclude prompts,
 responses, credentials, and exception messages from attributes and events.
+
+### Automatic capacity management
+
+Application Auto Scaling keeps every environment inside explicit availability
+floors and cost ceilings. The API has independent target-tracking policies for
+average ECS CPU (60%) and memory (70%): either signal can add capacity, while
+scale-in waits until both policies agree. A 60-second scale-out cooldown reacts
+quickly to demand; a 300-second scale-in cooldown reduces task churn.
+
+Worker capacity follows inference demand rather than CPU. The policy divides
+SQS `ApproximateNumberOfMessagesVisible` by Container Insights
+`RunningTaskCount` and targets two queued jobs per running Worker. Development
+is capped at 3 API/5 Worker tasks, staging at 6/10, and production at 12/30.
+ECS desired counts are availability baselines and Terraform ignores subsequent
+changes owned by the autoscaler.
 
 ### API authentication and secret handling
 

@@ -128,6 +128,24 @@ module "ecs" {
   depends_on = [module.networking, module.alb, module.iam, module.database, module.queue, module.secrets]
 }
 
+module "autoscaling" {
+  source = "../../modules/autoscaling"
+
+  name                           = local.name
+  cluster_name                   = module.ecs.cluster_name
+  api_service_name               = module.ecs.api_service_name
+  worker_service_name            = module.ecs.worker_service_name
+  queue_name                     = module.queue.queue_name
+  api_min_capacity               = var.api_desired_count
+  api_max_capacity               = var.api_max_capacity
+  worker_min_capacity            = var.worker_desired_count
+  worker_max_capacity            = var.worker_max_capacity
+  worker_backlog_target_per_task = var.worker_backlog_target_per_task
+  tags                           = local.common_tags
+
+  depends_on = [module.ecs]
+}
+
 module "monitoring" {
   source = "../../modules/monitoring"
 

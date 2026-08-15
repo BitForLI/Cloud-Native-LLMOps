@@ -23,6 +23,7 @@ creates the foundation needed by later ECS work:
 - a customer-KMS-encrypted SNS topic with optional confirmed email notifications.
 - an empty Secrets Manager API-token container encrypted by a rotating customer KMS key.
 - a pinned ADOT Collector sidecar per task exporting OTLP traces to AWS X-Ray.
+- ECS Application Auto Scaling with bounded API utilization and Worker queue-pressure policies.
 
 The dev default uses one NAT gateway to control cost. Production should use
 `per_az` for zone-independent egress. NAT gateways incur hourly and data
@@ -151,6 +152,22 @@ The API and Worker task roles may call only `xray:PutTraceSegments` and
 no X-Ray permission. Tune `otel_trace_sample_ratio` per environment; existing
 parent decisions always win because the SDK uses parent-based sampling.
 
+## Service autoscaling
+
+The reusable `autoscaling` module registers both ECS services with Application
+Auto Scaling. API CPU and memory policies use AWS predefined ECS target metrics.
+The Worker follows the AWS queue-pressure pattern:
+
+```text
+ApproximateNumberOfMessagesVisible / RunningTaskCount
+```
+
+`RunningTaskCount` comes from the enabled ECS Container Insights. Each
+environment supplies a non-zero availability floor and a hard task ceiling.
+Scale-out waits 60 seconds; scale-in waits 300 seconds to avoid rapid churn.
+The ECS service lifecycle ignores autoscaler-owned `desired_count` drift while
+Terraform retains ownership of the capacity limits and scaling policies.
+
 ## GitHub deployment variables
 
 After applying the development stack, read the values required by the CD
@@ -165,7 +182,8 @@ contain no static AWS credentials. The workflow uses `AWS_DEPLOY_ROLE_ARN` only
 to request a short-lived OIDC session, pushes images tagged with the tested
 40-character commit SHA, and updates both ECS services. Terraform ignores only
 the services' live `task_definition` revision so the CD workflow remains the
-application-release owner; all other ECS configuration stays Terraform-owned.
+application-release owner. It also ignores live `desired_count`, which belongs
+to Application Auto Scaling; capacity bounds remain Terraform-owned.
 
 The staging root is deliberately stricter: it requires HTTPS, per-AZ NAT,
 redundant API and Worker tasks, protected data/load-balancer resources, and the

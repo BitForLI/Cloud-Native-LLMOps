@@ -49,7 +49,12 @@ run "production_like_staging_defaults" {
       output.staging_safety_profile.load_balancer_protection &&
       output.staging_safety_profile.encrypted_api_auth &&
       output.staging_safety_profile.trace_sample_ratio == 1 &&
-      endswith(output.staging_safety_profile.adot_collector_image, ":v0.48.0")
+      endswith(output.staging_safety_profile.adot_collector_image, ":v0.48.0") &&
+      output.staging_safety_profile.autoscaling_bounds.api.min == 2 &&
+      output.staging_safety_profile.autoscaling_bounds.api.max == 6 &&
+      output.staging_safety_profile.autoscaling_bounds.worker.min == 2 &&
+      output.staging_safety_profile.autoscaling_bounds.worker.max == 10 &&
+      output.staging_safety_profile.worker_backlog_target == 2
     )
     error_message = "Staging safety controls must remain production-like."
   }

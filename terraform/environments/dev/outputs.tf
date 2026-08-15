@@ -94,6 +94,11 @@ output "ecs_service_names" {
   }
 }
 
+output "autoscaling_capacity_bounds" {
+  description = "Development ECS autoscaling minimum and maximum task counts."
+  value       = module.autoscaling.capacity_bounds
+}
+
 output "cloudwatch_log_groups" {
   description = "Container log groups keyed by component."
   value = {
