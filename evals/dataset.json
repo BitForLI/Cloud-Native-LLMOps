@@ -1,5 +1,12 @@
 [
-  {"prompt": "hello", "expected": "Received: hello"},
-  {"prompt": "AWS", "expected": "Received: AWS"}
+  {"id": "greeting", "prompt": "hello", "expected_output": "Received: hello"},
+  {"id": "aws", "prompt": "AWS", "expected_output": "Received: AWS"},
+  {"id": "llmops", "prompt": "LLMOps", "expected_output": "Received: LLMOps"},
+  {"id": "fastapi", "prompt": "FastAPI", "expected_output": "Received: FastAPI"},
+  {"id": "terraform", "prompt": "Terraform", "expected_output": "Received: Terraform"},
+  {"id": "bedrock", "prompt": "Amazon Bedrock", "expected_output": "Received: Amazon Bedrock"},
+  {"id": "fargate", "prompt": "ECS Fargate", "expected_output": "Received: ECS Fargate"},
+  {"id": "monitoring", "prompt": "CloudWatch", "expected_output": "Received: CloudWatch"},
+  {"id": "registry", "prompt": "Amazon ECR", "expected_output": "Received: Amazon ECR"},
+  {"id": "pipeline", "prompt": "GitHub Actions", "expected_output": "Received: GitHub Actions"}
 ]
-

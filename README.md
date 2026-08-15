@@ -61,5 +61,16 @@ region. CloudWatch publishing is added in the infrastructure phase.
 ## Quality gate defaults
 
 - Exact-response evaluation score: `>= 0.90`
-- Tool success rate: `>= 0.95` (to be added with tool calling)
-- P95 latency and cost thresholds: enforced once telemetry is wired into the evaluator
+- Tool success rate: `>= 0.95` when tool cases are present
+- P95 latency: `<= 3000 ms`
+- Total estimated evaluation cost: `<= $0.10`
+
+Run the same gate locally with:
+
+```bash
+python -m evals.run_eval
+```
+
+Thresholds can be overridden with `EVAL_ACCURACY_THRESHOLD`,
+`EVAL_TOOL_SUCCESS_THRESHOLD`, `EVAL_P95_LATENCY_THRESHOLD_MS`, and
+`EVAL_MAX_ESTIMATED_COST_USD`. A failed gate exits non-zero and blocks CI.

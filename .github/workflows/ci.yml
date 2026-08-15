@@ -2,7 +2,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, master]
 permissions:
   contents: read
 jobs:
@@ -18,9 +18,8 @@ jobs:
       - name: Lint
         run: ruff check services/api evals
       - name: Unit tests
-        run: PYTHONPATH=services/api pytest services/api/tests
+        run: PYTHONPATH=services/api pytest services/api/tests evals/test_eval.py
       - name: LLM evaluation quality gate
-        run: python evals/run_eval.py
+        run: python -m evals.run_eval
       - name: Dependency security scan
         run: pip-audit -r services/api/requirements.txt
-
