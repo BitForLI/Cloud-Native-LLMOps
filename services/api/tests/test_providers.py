@@ -1,8 +1,7 @@
-import pytest
 from app.config import Settings
 from app.providers.base import LLMProvider
 from app.providers.bedrock import BedrockProvider
-from app.providers.factory import create_provider
+from app.providers.factory import clear_provider_cache, create_provider, get_provider
 from app.providers.local import LocalProvider
 
 
@@ -10,6 +9,7 @@ def test_local_provider_is_deterministic():
     provider = LocalProvider()
 
     assert isinstance(provider, LLMProvider)
+    assert provider.model_id == "local-deterministic-stub"
     assert provider.generate("  hello  ") == "Received: hello"
 
 
@@ -21,7 +21,12 @@ def test_factory_selects_local_provider():
     assert isinstance(provider, LocalProvider)
 
 
-def test_factory_selects_bedrock_provider_with_configuration():
+def test_factory_selects_bedrock_provider_with_configuration(monkeypatch):
+    fake_client = object()
+    monkeypatch.setattr(
+        "app.providers.bedrock.boto3.client",
+        lambda *args, **kwargs: fake_client,
+    )
     settings = Settings(
         llm_provider="bedrock",
         aws_region="us-east-1",
@@ -37,9 +42,11 @@ def test_factory_selects_bedrock_provider_with_configuration():
     assert provider.model_id == "example-model"
 
 
-def test_bedrock_provider_fails_clearly_before_step_three():
-    settings = Settings(llm_provider="bedrock", _env_file=None)
-    provider = BedrockProvider(settings)
+def test_fastapi_dependency_reuses_provider_instances():
+    clear_provider_cache()
+    settings = Settings(llm_provider="local", _env_file=None)
 
-    with pytest.raises(NotImplementedError, match="integration step 3"):
-        provider.generate("hello")
+    first = get_provider(settings)
+    second = get_provider(settings)
+
+    assert first is second

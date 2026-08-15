@@ -1,20 +1,116 @@
+import json
+from typing import Any
+
+import boto3
+from botocore.client import BaseClient
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
+
 from app.config import Settings
 
 
+class BedrockProviderError(RuntimeError):
+    """Base error raised by the Bedrock provider boundary."""
+
+
+class BedrockInvocationError(BedrockProviderError):
+    """Bedrock rejected the request or could not be reached."""
+
+
+class BedrockResponseError(BedrockProviderError):
+    """Bedrock returned a response that did not match the expected schema."""
+
+
 class BedrockProvider:
-    """Amazon Bedrock provider boundary.
+    """Invoke Anthropic Claude through the Amazon Bedrock Runtime API."""
 
-    The boto3 runtime invocation is intentionally added in step 3. Keeping the
-    provider class in place now lets the API and factory remain unchanged when
-    the AWS implementation is introduced.
-    """
-
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        client: BaseClient | None = None,
+    ) -> None:
         self.region = settings.aws_region
         self.model_id = settings.bedrock_model_id
-
-    def generate(self, prompt: str) -> str:
-        raise NotImplementedError(
-            "Amazon Bedrock invocation is not available until integration step 3."
+        self.max_tokens = settings.bedrock_max_tokens
+        self.temperature = settings.bedrock_temperature
+        self._client = client or boto3.client(
+            "bedrock-runtime",
+            region_name=self.region,
+            config=Config(
+                connect_timeout=settings.bedrock_connect_timeout_seconds,
+                read_timeout=settings.bedrock_read_timeout_seconds,
+                retries={"max_attempts": 3, "mode": "standard"},
+            ),
         )
 
+    def generate(self, prompt: str) -> str:
+        request_body = json.dumps(self._build_payload(prompt))
+
+        try:
+            response = self._client.invoke_model(
+                modelId=self.model_id,
+                body=request_body,
+                accept="application/json",
+                contentType="application/json",
+            )
+            return self._parse_response(response)
+        except BedrockProviderError:
+            raise
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "ClientError")
+            raise BedrockInvocationError(
+                f"Bedrock invocation failed for model {self.model_id}: {error_code}"
+            ) from exc
+        except BotoCoreError as exc:
+            raise BedrockInvocationError(
+                f"Bedrock runtime is unavailable for model {self.model_id}: "
+                f"{type(exc).__name__}"
+            ) from exc
+
+    def _build_payload(self, prompt: str) -> dict[str, Any]:
+        """Build the native Anthropic Messages API payload used by Bedrock."""
+
+        normalized_prompt = prompt.strip()
+        if not normalized_prompt:
+            raise ValueError("Prompt must not be empty.")
+
+        return {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": normalized_prompt}],
+                }
+            ],
+        }
+
+    def _parse_response(self, response: dict[str, Any]) -> str:
+        """Extract all text blocks from an Anthropic Messages API response."""
+
+        body = response.get("body")
+        if body is None or not hasattr(body, "read"):
+            raise BedrockResponseError("Bedrock response is missing a readable body.")
+
+        try:
+            raw_body = body.read()
+            if isinstance(raw_body, bytes):
+                raw_body = raw_body.decode("utf-8")
+            payload = json.loads(raw_body)
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError) as exc:
+            raise BedrockResponseError("Bedrock returned invalid JSON.") from exc
+
+        content = payload.get("content")
+        if not isinstance(content, list):
+            raise BedrockResponseError("Bedrock response is missing content blocks.")
+
+        text = "".join(
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        ).strip()
+        if not text:
+            raise BedrockResponseError("Bedrock response contains no generated text.")
+
+        return text

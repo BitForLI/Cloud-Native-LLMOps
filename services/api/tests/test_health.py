@@ -19,6 +19,8 @@ def test_generate_returns_deterministic_response():
 
 def test_generate_delegates_to_provider():
     class FakeProvider:
+        model_id = "fake-model"
+
         def generate(self, prompt: str) -> str:
             return f"fake response for {prompt}"
 
@@ -30,3 +32,4 @@ def test_generate_delegates_to_provider():
 
     assert response.status_code == 200
     assert response.json()["output"] == "fake response for delegation"
+    assert response.json()["model"] == "fake-model"

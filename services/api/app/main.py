@@ -35,7 +35,6 @@ def ready() -> dict[str, str]:
 @app.post("/v1/generate", response_model=GenerateResponse)
 def generate(
     request: GenerateRequest,
-    settings: Annotated[Settings, Depends(get_settings)],
     provider: Annotated[LLMProvider, Depends(get_provider)],
 ) -> GenerateResponse:
     started = time.perf_counter()
@@ -43,6 +42,6 @@ def generate(
     latency_ms = round((time.perf_counter() - started) * 1000)
     return GenerateResponse(
         output=output,
-        model=settings.bedrock_model_id,
+        model=provider.model_id,
         latency_ms=latency_ms,
     )

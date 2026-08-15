@@ -32,6 +32,14 @@ to `bedrock` after completing the Bedrock runtime integration. Keeping the
 provider behind an interface makes tests and CI reproducible without AWS
 credentials.
 
+### Amazon Bedrock mode
+
+Set `LLM_PROVIDER=bedrock` and choose an Anthropic Claude model in
+`BEDROCK_MODEL_ID`. The runtime uses the standard boto3 credential chain; on
+ECS, credentials should come from the task role. The caller needs
+`bedrock:InvokeModel` permission and access to the selected model. Never place
+AWS access keys in `.env` or commit them to the repository.
+
 ## Delivery model
 
 1. PR: format/lint, unit tests, evaluation quality gate, dependency security scan.
