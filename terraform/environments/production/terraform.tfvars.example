@@ -1,0 +1,20 @@
+aws_region              = "ap-southeast-2"
+project_name            = "cloud-native-llmops"
+vpc_cidr                = "10.40.0.0/16"
+availability_zone_count = 3
+
+github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+promotion_source_ecr_repository_arns = [
+  "arn:aws:ecr:ap-southeast-2:123456789012:repository/cloud-native-llmops/staging/api",
+  "arn:aws:ecr:ap-southeast-2:123456789012:repository/cloud-native-llmops/staging/worker",
+]
+alb_certificate_arn = "arn:aws:acm:ap-southeast-2:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+
+bedrock_model_id             = "anthropic.claude-3-haiku-20240307-v1:0"
+api_image_tag                = "bootstrap"
+worker_image_tag             = "bootstrap"
+api_desired_count            = 3
+worker_desired_count         = 2
+log_retention_days           = 365
+blue_termination_wait_minutes = 10
+alarm_notification_emails    = ["platform@example.com"]

@@ -22,6 +22,11 @@ output "github_deploy_role_arn" {
   depends_on  = [aws_iam_role_policy.github_deploy]
 }
 
+output "github_deploy_role_name" {
+  description = "Name used when attaching environment-specific deployment permissions."
+  value       = aws_iam_role.github_deploy.name
+}
+
 output "github_oidc_provider_arn" {
   description = "Created or supplied GitHub OIDC provider ARN."
   value       = local.oidc_provider_arn

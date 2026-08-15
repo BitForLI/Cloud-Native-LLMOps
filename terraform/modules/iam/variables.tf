@@ -42,6 +42,18 @@ variable "promotion_source_ecr_repository_arns" {
   }
 }
 
+variable "promotion_only" {
+  description = "Restrict destination ECR writes to manifests whose layers already exist in the account registry."
+  type        = bool
+  default     = false
+}
+
+variable "github_api_update_enabled" {
+  description = "Allow GitHub to update the API ECS service directly; disable when CodeDeploy owns API releases."
+  type        = bool
+  default     = true
+}
+
 variable "artifact_bucket_arn" {
   description = "ARN of the S3 artifact bucket."
   type        = string

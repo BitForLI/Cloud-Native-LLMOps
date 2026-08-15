@@ -74,6 +74,12 @@ variable "enable_deletion_protection" {
   default     = false
 }
 
+variable "enable_blue_green" {
+  description = "Create the alternate API target group required by ECS CodeDeploy."
+  type        = bool
+  default     = false
+}
+
 variable "idle_timeout_seconds" {
   description = "ALB connection idle timeout."
   type        = number

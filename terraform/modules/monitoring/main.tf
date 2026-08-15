@@ -199,6 +199,85 @@ resource "aws_cloudwatch_metric_alarm" "alb_p95_latency" {
   tags                = local.common_tags
 }
 
+resource "aws_cloudwatch_metric_alarm" "alb_alternate_error_rate" {
+  count = var.monitor_alternate_target_group ? 1 : 0
+
+  alarm_name          = "${var.name}-alb-alt-5xx-rate"
+  alarm_description   = "Alternate API target 5xx rate exceeded ${var.error_rate_threshold_percent} percent."
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = var.error_rate_threshold_percent
+  evaluation_periods  = 5
+  datapoints_to_alarm = 3
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+  tags                = local.common_tags
+
+  lifecycle {
+    precondition {
+      condition     = var.alternate_target_group_arn_suffix != null
+      error_message = "alternate_target_group_arn_suffix is required when alternate monitoring is enabled."
+    }
+  }
+
+  metric_query {
+    id          = "error_rate"
+    expression  = "IF(requests>0,100*errors/requests,0)"
+    label       = "Alternate target 5xx rate (%)"
+    return_data = true
+  }
+
+  metric_query {
+    id          = "requests"
+    return_data = false
+    metric {
+      metric_name = "RequestCount"
+      namespace   = "AWS/ApplicationELB"
+      period      = 60
+      stat        = "Sum"
+      dimensions = {
+        LoadBalancer = var.load_balancer_arn_suffix
+        TargetGroup  = var.alternate_target_group_arn_suffix
+      }
+    }
+  }
+
+  metric_query {
+    id          = "errors"
+    return_data = false
+    metric {
+      metric_name = "HTTPCode_Target_5XX_Count"
+      namespace   = "AWS/ApplicationELB"
+      period      = 60
+      stat        = "Sum"
+      dimensions = {
+        LoadBalancer = var.load_balancer_arn_suffix
+        TargetGroup  = var.alternate_target_group_arn_suffix
+      }
+    }
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "alb_alternate_p95_latency" {
+  count = var.monitor_alternate_target_group ? 1 : 0
+
+  alarm_name          = "${var.name}-alb-alt-p95-latency"
+  alarm_description   = "Alternate API target P95 latency exceeded the production SLO."
+  namespace           = "AWS/ApplicationELB"
+  metric_name         = "TargetResponseTime"
+  dimensions          = { LoadBalancer = var.load_balancer_arn_suffix, TargetGroup = var.alternate_target_group_arn_suffix }
+  extended_statistic  = "p95"
+  period              = 60
+  evaluation_periods  = 5
+  datapoints_to_alarm = 3
+  threshold           = var.p95_latency_threshold_ms / 1000
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+  tags                = local.common_tags
+}
+
 resource "aws_cloudwatch_metric_alarm" "ecs_cpu" {
   for_each = local.ecs_services
 

@@ -43,6 +43,19 @@ variable "target_group_arn_suffix" {
   type        = string
 }
 
+variable "alternate_target_group_arn_suffix" {
+  description = "Optional alternate ALB target group monitored during blue/green releases."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "monitor_alternate_target_group" {
+  description = "Create release alarms for the alternate blue/green target group."
+  type        = bool
+  default     = false
+}
+
 variable "queue_name" {
   description = "Inference queue CloudWatch dimension value."
   type        = string

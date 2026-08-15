@@ -245,6 +245,17 @@ variable "health_check_grace_period_seconds" {
   }
 }
 
+variable "api_deployment_controller" {
+  description = "Deployment controller for the API service."
+  type        = string
+  default     = "ECS"
+
+  validation {
+    condition     = contains(["ECS", "CODE_DEPLOY"], var.api_deployment_controller)
+    error_message = "api_deployment_controller must be ECS or CODE_DEPLOY."
+  }
+}
+
 variable "log_retention_days" {
   description = "CloudWatch Logs retention for API and Worker streams."
   type        = number

@@ -227,7 +227,7 @@ locals {
       {
         Sid    = "PushServiceImages"
         Effect = "Allow"
-        Action = [
+        Action = var.promotion_only ? ["ecr:PutImage"] : [
           "ecr:BatchCheckLayerAvailability",
           "ecr:CompleteLayerUpload",
           "ecr:InitiateLayerUpload",
@@ -265,13 +265,19 @@ locals {
         Resource = ["*"]
       },
       {
-        Sid    = "DeployServices"
+        Sid    = "DescribeDeploymentServices"
         Effect = "Allow"
         Action = [
           "ecs:DescribeServices",
-          "ecs:UpdateService",
+          "ecs:DescribeTaskSets",
         ]
         Resource = local.ecs_service_arns
+      },
+      {
+        Sid      = "UpdateDeploymentServices"
+        Effect   = "Allow"
+        Action   = ["ecs:UpdateService"]
+        Resource = var.github_api_update_enabled ? local.ecs_service_arns : [local.ecs_service_arns[1]]
       },
       {
         Sid      = "DescribeCluster"

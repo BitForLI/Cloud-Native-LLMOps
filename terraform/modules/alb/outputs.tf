@@ -38,6 +38,31 @@ output "api_target_group_arn_suffix" {
   value       = aws_lb_target_group.api.arn_suffix
 }
 
+output "api_target_group_name" {
+  description = "Primary API target group name."
+  value       = aws_lb_target_group.api.name
+}
+
+output "api_alternate_target_group_arn" {
+  description = "Alternate API target group ARN for blue/green deployment."
+  value       = try(aws_lb_target_group.api_alternate[0].arn, null)
+}
+
+output "api_alternate_target_group_arn_suffix" {
+  description = "Alternate target group CloudWatch dimension for release alarms."
+  value       = try(aws_lb_target_group.api_alternate[0].arn_suffix, null)
+}
+
+output "api_alternate_target_group_name" {
+  description = "Alternate API target group name for blue/green deployment."
+  value       = try(aws_lb_target_group.api_alternate[0].name, null)
+}
+
+output "blue_green_enabled" {
+  description = "Whether an alternate API target group is provisioned."
+  value       = var.enable_blue_green
+}
+
 output "api_listener_arn" {
   description = "HTTPS listener ARN when configured, otherwise the HTTP listener ARN."
   value = var.certificate_arn == null ? (

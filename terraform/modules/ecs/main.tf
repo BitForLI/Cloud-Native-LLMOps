@@ -242,9 +242,16 @@ resource "aws_ecs_service" "api" {
   enable_execute_command             = false
   propagate_tags                     = "SERVICE"
 
-  deployment_circuit_breaker {
-    enable   = true
-    rollback = true
+  dynamic "deployment_circuit_breaker" {
+    for_each = var.api_deployment_controller == "ECS" ? [1] : []
+    content {
+      enable   = true
+      rollback = true
+    }
+  }
+
+  deployment_controller {
+    type = var.api_deployment_controller
   }
 
   lifecycle {

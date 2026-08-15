@@ -1,5 +1,5 @@
 locals {
-  name     = "${var.project_name}-${var.environment}"
+  name     = "${var.project_name}-prod"
   alb_name = "llmops-${var.environment}"
   common_tags = {
     Environment = var.environment
@@ -9,13 +9,12 @@ locals {
 }
 
 module "networking" {
-  source = "../../modules/networking"
-
+  source                  = "../../modules/networking"
   name                    = local.name
   vpc_cidr                = var.vpc_cidr
   availability_zone_count = var.availability_zone_count
   availability_zones      = var.availability_zones
-  nat_gateway_mode        = var.nat_gateway_mode
+  nat_gateway_mode        = "per_az"
   tags                    = local.common_tags
 }
 
@@ -35,8 +34,8 @@ module "database" {
   source = "../../modules/database"
 
   name                                    = local.name
-  artifact_expiration_days                = 365
-  noncurrent_version_retention_days       = 90
+  artifact_expiration_days                = null
+  noncurrent_version_retention_days       = 365
   dynamodb_deletion_protection_enabled    = true
   dynamodb_point_in_time_recovery_enabled = true
   force_destroy_artifacts                 = false
@@ -60,6 +59,7 @@ module "iam" {
   worker_ecr_repository_arn            = module.worker_ecr.repository_arn
   promotion_source_ecr_repository_arns = var.promotion_source_ecr_repository_arns
   promotion_only                       = true
+  github_api_update_enabled            = false
   artifact_bucket_arn                  = module.database.artifact_bucket_arn
   job_table_arn                        = module.database.job_table_arn
   inference_queue_arn                  = module.queue.queue_arn
@@ -78,35 +78,37 @@ module "alb" {
   public_subnet_ids          = module.networking.public_subnet_ids
   certificate_arn            = var.alb_certificate_arn
   enable_deletion_protection = true
+  enable_blue_green          = true
   tags                       = local.common_tags
 }
 
 module "ecs" {
   source = "../../modules/ecs"
 
-  name                  = local.name
-  environment           = var.environment
-  aws_region            = var.aws_region
-  vpc_id                = module.networking.vpc_id
-  private_subnet_ids    = module.networking.private_subnet_ids
-  alb_security_group_id = module.alb.security_group_id
-  api_target_group_arn  = module.alb.api_target_group_arn
-  api_repository_url    = module.api_ecr.repository_url
-  worker_repository_url = module.worker_ecr.repository_url
-  api_image_tag         = var.api_image_tag
-  worker_image_tag      = var.worker_image_tag
-  execution_role_arn    = module.iam.execution_role_arn
-  api_task_role_arn     = module.iam.api_task_role_arn
-  worker_task_role_arn  = module.iam.worker_task_role_arn
-  bedrock_model_id      = var.bedrock_model_id
-  artifact_bucket_name  = module.database.artifact_bucket_name
-  job_table_name        = module.database.job_table_name
-  inference_queue_url   = module.queue.queue_url
-  job_max_receive_count = var.job_max_receive_count
-  api_desired_count     = var.api_desired_count
-  worker_desired_count  = var.worker_desired_count
-  log_retention_days    = var.log_retention_days
-  tags                  = local.common_tags
+  name                      = local.name
+  environment               = var.environment
+  aws_region                = var.aws_region
+  vpc_id                    = module.networking.vpc_id
+  private_subnet_ids        = module.networking.private_subnet_ids
+  alb_security_group_id     = module.alb.security_group_id
+  api_target_group_arn      = module.alb.api_target_group_arn
+  api_repository_url        = module.api_ecr.repository_url
+  worker_repository_url     = module.worker_ecr.repository_url
+  api_image_tag             = var.api_image_tag
+  worker_image_tag          = var.worker_image_tag
+  execution_role_arn        = module.iam.execution_role_arn
+  api_task_role_arn         = module.iam.api_task_role_arn
+  worker_task_role_arn      = module.iam.worker_task_role_arn
+  bedrock_model_id          = var.bedrock_model_id
+  artifact_bucket_name      = module.database.artifact_bucket_name
+  job_table_name            = module.database.job_table_name
+  inference_queue_url       = module.queue.queue_url
+  job_max_receive_count     = var.job_max_receive_count
+  api_desired_count         = var.api_desired_count
+  worker_desired_count      = var.worker_desired_count
+  log_retention_days        = var.log_retention_days
+  api_deployment_controller = "CODE_DEPLOY"
+  tags                      = local.common_tags
 
   depends_on = [module.networking, module.alb, module.iam, module.database, module.queue]
 }
@@ -122,6 +124,8 @@ module "monitoring" {
   worker_service_name                    = module.ecs.worker_service_name
   load_balancer_arn_suffix               = module.alb.load_balancer_arn_suffix
   target_group_arn_suffix                = module.alb.api_target_group_arn_suffix
+  alternate_target_group_arn_suffix      = module.alb.api_alternate_target_group_arn_suffix
+  monitor_alternate_target_group         = true
   queue_name                             = module.queue.queue_name
   dead_letter_queue_name                 = module.queue.dead_letter_queue_name
   api_log_group_name                     = module.ecs.api_log_group_name
@@ -133,4 +137,39 @@ module "monitoring" {
   queue_age_threshold_seconds            = var.alarm_queue_age_threshold_seconds
   resource_utilization_threshold_percent = var.alarm_resource_utilization_threshold_percent
   tags                                   = local.common_tags
+}
+
+module "codedeploy" {
+  source = "../../modules/codedeploy"
+
+  name                     = local.name
+  ecs_cluster_name         = module.ecs.cluster_name
+  ecs_service_name         = module.ecs.api_service_name
+  production_listener_arns = [module.alb.api_listener_arn]
+  target_group_names = [
+    module.alb.api_target_group_name,
+    module.alb.api_alternate_target_group_name,
+  ]
+  alarm_names                   = module.monitoring.deployment_alarm_names.api
+  deployment_config_name        = "CodeDeployDefault.ECSCanary10Percent5Minutes"
+  blue_termination_wait_minutes = var.blue_termination_wait_minutes
+  tags                          = local.common_tags
+}
+
+resource "aws_iam_role_policy" "production_codedeploy" {
+  name = "${local.name}-codedeploy-release"
+  role = module.iam.github_deploy_role_name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "ReleaseOnlyThroughCodeDeploy"
+      Effect = "Allow"
+      Action = [
+        "codedeploy:CreateDeployment",
+        "codedeploy:GetDeployment",
+        "codedeploy:StopDeployment",
+      ]
+      Resource = [module.codedeploy.deployment_group_arn]
+    }]
+  })
 }

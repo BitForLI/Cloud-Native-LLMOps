@@ -167,6 +167,24 @@ two dev source repositories.
 The GitHub environment must require reviewers and restrict deployments to
 `master`; the workflow also rejects dispatches from other refs.
 
+### Production canary release
+
+`release-production.yml` requires the exact SHA to have a successful,
+non-skipped staging promotion and then pauses at the protected `production`
+GitHub environment for reviewer approval. It promotes the same scanned ECR
+manifests—production IAM cannot upload new image layers—then updates the
+headless Worker with its ECS circuit breaker and releases the API through
+CodeDeploy blue/green.
+
+The ALB runs two target groups. CodeDeploy shifts 10% of production traffic to
+green for five minutes, watches focused API/LLM/compute CloudWatch alarms, then
+shifts the remaining 90%. An alarm or deployment failure automatically returns
+traffic to blue. Synthetic health and Bedrock requests exercise the canary
+throughout the shift so low organic traffic cannot leave its alarms idle.
+Post-release health, real Bedrock evaluation, cost/latency
+gates, and durable Worker tests run before completion; a later verification
+failure starts a reverse CodeDeploy deployment and restores the prior Worker.
+
 ## Quality gate defaults
 
 - Exact-response evaluation score: `>= 0.90`

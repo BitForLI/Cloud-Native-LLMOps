@@ -78,6 +78,34 @@ resource "aws_lb_target_group" "api" {
   tags = merge(local.common_tags, { Name = "${var.name}-api" })
 }
 
+resource "aws_lb_target_group" "api_alternate" {
+  count = var.enable_blue_green ? 1 : 0
+
+  name                 = "${var.name}-api-alt"
+  port                 = var.api_container_port
+  protocol             = "HTTP"
+  target_type          = "ip"
+  vpc_id               = var.vpc_id
+  deregistration_delay = var.deregistration_delay_seconds
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    interval            = 30
+    timeout             = 5
+    path                = var.health_check_path
+    protocol            = "HTTP"
+    matcher             = "200"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = merge(local.common_tags, { Name = "${var.name}-api-alt" })
+}
+
 resource "aws_lb_listener" "http_forward" {
   count = var.certificate_arn == null ? 1 : 0
 

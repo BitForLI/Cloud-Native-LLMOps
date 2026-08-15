@@ -17,6 +17,7 @@ def test_staging_is_manual_serialized_and_environment_protected():
     job = workflow["jobs"]["promote"]
 
     assert workflow["on"]["workflow_dispatch"]["inputs"]["image_tag"]["required"] == "true"
+    assert workflow["run-name"] == "Promote Staging ${{ inputs.image_tag }}"
     assert workflow["concurrency"] == {
         "group": "promote-staging",
         "cancel-in-progress": "false",

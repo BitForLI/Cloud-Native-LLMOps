@@ -39,6 +39,9 @@ terraform -chdir=terraform/environments/dev test
 terraform -chdir=terraform/environments/staging init -backend=false -lockfile=readonly
 terraform -chdir=terraform/environments/staging validate
 terraform -chdir=terraform/environments/staging test
+terraform -chdir=terraform/environments/production init -backend=false -lockfile=readonly
+terraform -chdir=terraform/environments/production validate
+terraform -chdir=terraform/environments/production test
 ```
 
 Copy `terraform.tfvars.example` when values must differ. Do not commit real
@@ -145,3 +148,10 @@ existing account OIDC provider. Its deploy role trusts only the protected
 GitHub `staging` environment and can read only the two configured dev source
 repositories. Promotion copies the already-scanned ECR manifests by digest;
 it cannot substitute a rebuild.
+
+Production adds a second ALB target group and an ECS CodeDeploy deployment
+group using `CodeDeployDefault.ECSCanary10Percent5Minutes`. Five focused API
+alarms stop traffic shifting and trigger automatic rollback; the old task set
+is retained for a configurable bake window. The production GitHub role can
+copy existing staging manifests but cannot upload container layers, and its
+CodeDeploy permissions are scoped to the single production deployment group.

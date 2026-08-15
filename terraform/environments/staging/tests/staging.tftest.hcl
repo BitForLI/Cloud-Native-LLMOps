@@ -64,6 +64,7 @@ run "promotion_role_is_source_scoped" {
       "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/dev/api",
       "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/dev/worker",
     ]
+    promotion_only           = true
     artifact_bucket_arn      = "arn:aws:s3:::llmops-staging-artifacts"
     job_table_arn            = "arn:aws:dynamodb:ap-southeast-2:123456789012:table/llmops-staging-jobs"
     inference_queue_arn      = "arn:aws:sqs:ap-southeast-2:123456789012:llmops-staging-inference"
@@ -76,7 +77,8 @@ run "promotion_role_is_source_scoped" {
     condition = (
       strcontains(local.github_trust_policy, ":environment:staging") &&
       length(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "ReadPromotionSources"]).Resource) == 2 &&
-      contains(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "ReadPromotionSources"]).Action, "ecr:BatchGetImage")
+      contains(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "ReadPromotionSources"]).Action, "ecr:BatchGetImage") &&
+      one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "PushServiceImages"]).Action == ["ecr:PutImage"]
     )
     error_message = "Promotion role must trust staging and read exactly two source repositories."
   }
