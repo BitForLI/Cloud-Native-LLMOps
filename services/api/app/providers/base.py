@@ -2,6 +2,10 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 
+class LLMProviderError(RuntimeError):
+    """Safe domain boundary for failures produced by an LLM backend."""
+
+
 @dataclass(frozen=True, slots=True)
 class LLMResult:
     output: str

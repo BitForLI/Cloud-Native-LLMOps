@@ -7,10 +7,10 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.config import Settings
-from app.providers.base import LLMResult
+from app.providers.base import LLMProviderError, LLMResult
 
 
-class BedrockProviderError(RuntimeError):
+class BedrockProviderError(LLMProviderError):
     """Base error raised by the Bedrock provider boundary."""
 
 

@@ -64,9 +64,13 @@ async def request_context_middleware(request: Request, call_next) -> Response:
         latency_ms = round((time.perf_counter() - started) * 1000, 2)
         get_metrics().record_request(response.status_code)
         response.headers[REQUEST_ID_HEADER] = request_id
-        logger.info(
+        error_type = getattr(request.state, "error_type", None)
+        if error_type is None and response.status_code >= 400:
+            error_type = "HTTPError"
+        log_method = logger.error if response.status_code >= 500 else logger.info
+        log_method(
             "Request completed",
-            extra=_log_fields(request, response.status_code, latency_ms, None),
+            extra=_log_fields(request, response.status_code, latency_ms, error_type),
         )
         return response
     finally:

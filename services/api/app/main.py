@@ -2,13 +2,15 @@ import time
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
 from app.logging import configure_logging
 from app.metrics import Metrics, MetricsSnapshot, get_metrics
 from app.middleware import request_context_middleware
-from app.providers.base import LLMProvider
+from app.providers.base import LLMProvider, LLMProviderError
+from app.providers.bedrock import BedrockResponseError
 from app.providers.factory import get_provider
 
 configure_logging(get_settings().log_level)
@@ -29,6 +31,67 @@ class GenerateResponse(BaseModel):
     estimated_cost: float | None = None
 
 
+class ErrorDetail(BaseModel):
+    code: str
+    message: str
+    request_id: str | None
+
+
+class ErrorResponse(BaseModel):
+    error: ErrorDetail
+
+
+def _provider_error_response(
+    request: Request,
+    exc: LLMProviderError,
+    status_code: int,
+    code: str,
+    message: str,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    request.state.error_type = type(exc).__name__
+    return JSONResponse(
+        status_code=status_code,
+        headers=headers,
+        content={
+            "error": {
+                "code": code,
+                "message": message,
+                "request_id": getattr(request.state, "request_id", None),
+            }
+        },
+    )
+
+
+@app.exception_handler(BedrockResponseError)
+async def handle_provider_response_error(
+    request: Request,
+    exc: BedrockResponseError,
+) -> JSONResponse:
+    return _provider_error_response(
+        request=request,
+        exc=exc,
+        status_code=502,
+        code="invalid_model_response",
+        message="The model service returned an invalid response.",
+    )
+
+
+@app.exception_handler(LLMProviderError)
+async def handle_provider_error(
+    request: Request,
+    exc: LLMProviderError,
+) -> JSONResponse:
+    return _provider_error_response(
+        request=request,
+        exc=exc,
+        status_code=503,
+        code="llm_provider_unavailable",
+        message="The model service is temporarily unavailable.",
+        headers={"Retry-After": "5"},
+    )
+
+
 @app.get("/health")
 def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, str]:
     return {"status": "ok", "environment": settings.app_env}
@@ -47,7 +110,20 @@ def metrics_snapshot(
     return metrics.snapshot()
 
 
-@app.post("/v1/generate", response_model=GenerateResponse)
+@app.post(
+    "/v1/generate",
+    response_model=GenerateResponse,
+    responses={
+        502: {
+            "model": ErrorResponse,
+            "description": "The model returned an invalid response.",
+        },
+        503: {
+            "model": ErrorResponse,
+            "description": "The model provider is temporarily unavailable.",
+        },
+    },
+)
 def generate(
     payload: GenerateRequest,
     request: Request,
