@@ -1,20 +1,33 @@
-terraform {
-  required_version = ">= 1.7.0"
-  required_providers { aws = { source = "hashicorp/aws", version = "~> 5.0" } }
+locals {
+  name = "${var.project_name}-${var.environment}"
+  common_tags = {
+    Environment = var.environment
+    ManagedBy   = "terraform"
+    Project     = var.project_name
+  }
 }
-
-provider "aws" { region = var.aws_region }
-
-variable "aws_region" { type = string, default = "ap-southeast-2" }
 
 module "networking" {
-  source     = "../../modules/networking"
-  name       = "llmops-dev"
-  cidr_block = "10.20.0.0/16"
+  source = "../../modules/networking"
+
+  name                    = local.name
+  vpc_cidr                = var.vpc_cidr
+  availability_zone_count = var.availability_zone_count
+  availability_zones      = var.availability_zones
+  nat_gateway_mode        = var.nat_gateway_mode
+  tags                    = local.common_tags
 }
 
-module "ecr" {
+module "api_ecr" {
   source = "../../modules/ecr"
-  name   = "llmops-api-dev"
+
+  name = "${var.project_name}/${var.environment}/api"
+  tags = local.common_tags
 }
 
+module "worker_ecr" {
+  source = "../../modules/ecr"
+
+  name = "${var.project_name}/${var.environment}/worker"
+  tags = local.common_tags
+}

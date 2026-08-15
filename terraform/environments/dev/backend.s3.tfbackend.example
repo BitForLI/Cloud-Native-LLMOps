@@ -1,0 +1,6 @@
+# The bucket must be provisioned separately before terraform init.
+bucket       = "replace-with-terraform-state-bucket"
+key          = "cloud-native-llmops/dev/terraform.tfstate"
+region       = "ap-southeast-2"
+encrypt      = true
+use_lockfile = true

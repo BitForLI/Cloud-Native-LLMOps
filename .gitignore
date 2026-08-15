@@ -3,6 +3,6 @@
 __pycache__/
 .pytest_cache/
 .terraform/
+.tools/
 *.tfstate
 *.tfstate.*
-

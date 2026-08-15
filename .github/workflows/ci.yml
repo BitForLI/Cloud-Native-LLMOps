@@ -16,10 +16,27 @@ jobs:
       - name: Install API dependencies
         run: pip install -r services/api/requirements-dev.txt ruff pip-audit
       - name: Lint
-        run: ruff check services/api evals
+        run: ruff check services/api services/worker evals
       - name: Unit tests
         run: PYTHONPATH=services/api pytest services/api/tests services/worker/tests evals/test_eval.py
       - name: LLM evaluation quality gate
         run: python -m evals.run_eval
       - name: Dependency security scan
         run: pip-audit -r services/api/requirements-dev.txt
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.15.8"
+          terraform_wrapper: false
+      - name: Terraform format
+        run: terraform fmt -check -recursive terraform
+      - name: Terraform initialize
+        run: terraform -chdir=terraform/environments/dev init -backend=false -input=false -lockfile=readonly
+      - name: Terraform validate
+        run: terraform -chdir=terraform/environments/dev validate
+      - name: Terraform module tests
+        run: terraform -chdir=terraform/environments/dev test

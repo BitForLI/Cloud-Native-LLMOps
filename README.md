@@ -76,6 +76,15 @@ Tune local resource bounds with `JOB_MAX_WORKERS`, `JOB_MAX_PENDING`,
 `JOB_MAX_STORED`, and `JOB_POLL_INTERVAL_SECONDS`. `JOB_MAX_STORED` must be at
 least `JOB_MAX_PENDING`.
 
+### Terraform foundation
+
+The development infrastructure composes reusable networking and ECR modules.
+It creates multi-AZ public/private subnet tiers, configurable NAT egress, an S3
+gateway endpoint, and separate encrypted immutable repositories for API and
+Worker images. Terraform validation runs in CI; no AWS credentials are required
+for that static validation job. See `terraform/README.md` for state and cost
+guidance.
+
 ## Delivery model
 
 1. PR: format/lint, unit tests, evaluation quality gate, dependency security scan.
