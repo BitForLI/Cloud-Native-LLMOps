@@ -1,9 +1,12 @@
 import time
+from typing import Annotated
 
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
+from app.providers.base import LLMProvider
+from app.providers.factory import get_provider
 
 app = FastAPI(title="LLMOps Inference API", version="0.1.0")
 
@@ -19,7 +22,7 @@ class GenerateResponse(BaseModel):
 
 
 @app.get("/health")
-def health(settings: Settings = Depends(get_settings)) -> dict[str, str]:
+def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, str]:
     return {"status": "ok", "environment": settings.app_env}
 
 
@@ -32,11 +35,11 @@ def ready() -> dict[str, str]:
 @app.post("/v1/generate", response_model=GenerateResponse)
 def generate(
     request: GenerateRequest,
-    settings: Settings = Depends(get_settings),
+    settings: Annotated[Settings, Depends(get_settings)],
+    provider: Annotated[LLMProvider, Depends(get_provider)],
 ) -> GenerateResponse:
     started = time.perf_counter()
-    # A deterministic stub enables safe CI evaluation. Replace with a Bedrock adapter.
-    output = f"Received: {request.prompt.strip()}"
+    output = provider.generate(request.prompt)
     latency_ms = round((time.perf_counter() - started) * 1000)
     return GenerateResponse(
         output=output,

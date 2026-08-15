@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -8,6 +9,7 @@ class Settings(BaseSettings):
 
     app_env: str = "local"
     aws_region: str = "ap-southeast-2"
+    llm_provider: Literal["local", "bedrock"] = "local"
     bedrock_model_id: str = "local-deterministic-stub"
     log_level: str = "INFO"
 
@@ -24,4 +26,3 @@ def get_settings() -> Settings:
     """Return one immutable-by-convention settings instance per process."""
 
     return Settings()
-

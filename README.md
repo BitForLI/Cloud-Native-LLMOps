@@ -27,7 +27,10 @@ docker compose up --build
 # http://localhost:8000/health
 ```
 
-The API uses a deterministic local response unless `BEDROCK_MODEL_ID` is configured. This makes tests and CI reproducible before AWS credentials are available.
+The API uses a deterministic local provider when `LLM_PROVIDER=local`. Set it
+to `bedrock` after completing the Bedrock runtime integration. Keeping the
+provider behind an interface makes tests and CI reproducible without AWS
+credentials.
 
 ## Delivery model
 
