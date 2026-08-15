@@ -85,6 +85,11 @@ Worker images. Terraform validation runs in CI; no AWS credentials are required
 for that static validation job. See `terraform/README.md` for state and cost
 guidance.
 
+The data layer adds a private versioned S3 artifact bucket, an encrypted
+on-demand DynamoDB job table with TTL/PITR, and an encrypted long-poll SQS queue
+with bounded retries and a 14-day dead-letter queue. Application traffic is not
+switched to these services until the durable adapter step.
+
 ## Delivery model
 
 1. PR: format/lint, unit tests, evaluation quality gate, dependency security scan.

@@ -79,3 +79,25 @@ variable "nat_gateway_mode" {
     error_message = "nat_gateway_mode must be none, single, or per_az."
   }
 }
+
+variable "job_visibility_timeout_seconds" {
+  description = "Time allowed for one Worker inference attempt before SQS redelivery."
+  type        = number
+  default     = 180
+
+  validation {
+    condition     = var.job_visibility_timeout_seconds >= 30 && var.job_visibility_timeout_seconds <= 43200
+    error_message = "job_visibility_timeout_seconds must be between 30 and 43200."
+  }
+}
+
+variable "job_max_receive_count" {
+  description = "Failed receives allowed before an inference job moves to the DLQ."
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.job_max_receive_count >= 1 && var.job_max_receive_count <= 1000
+    error_message = "job_max_receive_count must be between 1 and 1000."
+  }
+}

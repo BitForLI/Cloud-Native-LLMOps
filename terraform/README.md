@@ -11,6 +11,9 @@ creates the foundation needed by later ECS work:
 - an S3 gateway endpoint on private routes;
 - separate encrypted, scan-on-push, immutable ECR repositories for API and Worker;
 - ECR lifecycle policies for untagged and excess images.
+- a private, versioned, TLS-only S3 artifact bucket with lifecycle controls;
+- an encrypted on-demand DynamoDB job table with TTL and point-in-time recovery;
+- an encrypted long-poll SQS inference queue with bounded retries and a DLQ.
 
 The dev default uses one NAT gateway to control cost. Production should use
 `per_az` for zone-independent egress. NAT gateways incur hourly and data
@@ -45,3 +48,11 @@ terraform -chdir=terraform/environments/dev init \
 The S3 backend uses native lockfiles and encryption. AWS credentials come from
 the standard provider chain locally and from GitHub OIDC in CI/CD; static access
 keys do not belong in Terraform files.
+
+## Durable job boundary
+
+Infrastructure now exposes the SQS queue URL, DynamoDB table name, and S3
+bucket name required by the distributed API/Worker adapters. This step creates
+the managed services only; the application still uses its explicitly documented
+process-local adapter until the following integration step. Failed SQS messages
+remain in the DLQ for 14 days for inspection and controlled redrive.
