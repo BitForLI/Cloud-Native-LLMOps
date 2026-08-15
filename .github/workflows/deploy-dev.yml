@@ -1,0 +1,205 @@
+name: Deploy Development
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [master]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-development
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master' &&
+      vars.AWS_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      AWS_PAGER: ""
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      API_ECR_REPOSITORY: ${{ vars.API_ECR_REPOSITORY }}
+      WORKER_ECR_REPOSITORY: ${{ vars.WORKER_ECR_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      API_ECS_SERVICE: ${{ vars.API_ECS_SERVICE }}
+      WORKER_ECS_SERVICE: ${{ vars.WORKER_ECS_SERVICE }}
+      API_URL: ${{ vars.API_URL }}
+      IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+
+    steps:
+      - name: Validate immutable deployment inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(AWS_ACCOUNT_ID AWS_DEPLOY_ROLE_ARN AWS_REGION API_ECR_REPOSITORY WORKER_ECR_REPOSITORY ECS_CLUSTER API_ECS_SERVICE WORKER_ECS_SERVICE API_URL IMAGE_TAG)
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required GitHub Actions variable: ${name}" >&2
+              exit 1
+            fi
+          done
+          [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]] || { echo "AWS_ACCOUNT_ID must contain 12 digits" >&2; exit 1; }
+          [[ "$IMAGE_TAG" =~ ^[0-9a-f]{40}$ ]] || { echo "IMAGE_TAG must be the triggering commit SHA" >&2; exit 1; }
+          [[ "$API_URL" =~ ^https?://[^/]+/?$ ]] || { echo "API_URL must be an HTTP(S) origin without a path" >&2; exit 1; }
+
+      - name: Check out the exact CI-tested revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: deploy-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+          unset-current-credentials: true
+
+      - name: Authenticate Docker to private ECR
+        shell: bash
+        run: |
+          set -euo pipefail
+          registry="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$registry"
+
+      - name: Build and smoke-test hardened images
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          registry="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          api_image="${registry}/${API_ECR_REPOSITORY}:${IMAGE_TAG}"
+          worker_image="${registry}/${WORKER_ECR_REPOSITORY}:${IMAGE_TAG}"
+          api_container=""
+          worker_container=""
+          cleanup() {
+            [[ -z "$api_container" ]] || docker rm -f "$api_container" >/dev/null 2>&1 || true
+            [[ -z "$worker_container" ]] || docker rm -f "$worker_container" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker build --pull --build-arg BUILD_REVISION="$IMAGE_TAG" -f services/api/Dockerfile -t "$api_image" .
+          docker build --pull --build-arg BUILD_REVISION="$IMAGE_TAG" -f services/worker/Dockerfile -t "$worker_image" .
+          [[ "$(docker image inspect "$api_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" == "$IMAGE_TAG" ]]
+          [[ "$(docker image inspect "$worker_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" == "$IMAGE_TAG" ]]
+
+          api_container=$(docker run -d --read-only --tmpfs /tmp:size=64m --cap-drop ALL --security-opt no-new-privileges -p 127.0.0.1:18000:8000 -e APP_ENV=ci -e LLM_PROVIDER=local -e JOB_BACKEND=memory "$api_image")
+          for attempt in {1..20}; do
+            curl --fail --silent --show-error http://127.0.0.1:18000/health >/dev/null && break
+            [[ "$attempt" -lt 20 ]] || { docker logs "$api_container"; exit 1; }
+            sleep 1
+          done
+          curl --fail --silent --show-error -H 'Content-Type: application/json' -d '{"prompt":"deployment smoke test"}' http://127.0.0.1:18000/v1/generate | python -c 'import json,sys; data=json.load(sys.stdin); assert data["model"] == "local-deterministic-stub"'
+
+          worker_container=$(docker run -d --read-only --tmpfs /tmp:size=32m --cap-drop ALL --security-opt no-new-privileges -e APP_ENV=ci -e JOB_BACKEND=memory "$worker_image")
+          for attempt in {1..10}; do
+            docker exec "$worker_container" python -m services.worker.healthcheck && break
+            [[ "$attempt" -lt 10 ]] || { docker logs "$worker_container"; exit 1; }
+            sleep 1
+          done
+
+      - name: Push immutable images and enforce ECR scan gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          registry="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          scan_repository() {
+            local repository="$1"
+            local image="${registry}/${repository}:${IMAGE_TAG}"
+            if ! aws ecr describe-images --repository-name "$repository" --image-ids imageTag="$IMAGE_TAG" >/dev/null 2>&1; then
+              docker push "$image"
+            else
+              echo "Immutable image already exists; reusing ${image}"
+            fi
+            aws ecr wait image-scan-complete --repository-name "$repository" --image-id imageTag="$IMAGE_TAG"
+            local findings critical high
+            findings=$(aws ecr describe-image-scan-findings --repository-name "$repository" --image-id imageTag="$IMAGE_TAG" --output json)
+            critical=$(jq -r '.imageScanFindings.findingSeverityCounts.CRITICAL // 0' <<<"$findings")
+            high=$(jq -r '.imageScanFindings.findingSeverityCounts.HIGH // 0' <<<"$findings")
+            echo "${repository}: CRITICAL=${critical}, HIGH=${high}"
+            [[ "$critical" -eq 0 && "$high" -eq 0 ]] || { echo "Container vulnerability gate failed for ${repository}" >&2; return 1; }
+          }
+          scan_repository "$API_ECR_REPOSITORY"
+          scan_repository "$WORKER_ECR_REPOSITORY"
+
+      - name: Register task definitions and deploy both services
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          registry="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          api_image="${registry}/${API_ECR_REPOSITORY}:${IMAGE_TAG}"
+          worker_image="${registry}/${WORKER_ECR_REPOSITORY}:${IMAGE_TAG}"
+          previous_api_task=""
+          previous_worker_task=""
+          deployment_started=false
+
+          rollback() {
+            local exit_code=$?
+            trap - ERR
+            if [[ "$deployment_started" == true ]]; then
+              echo "Deployment failed; restoring both previous task definitions" >&2
+              aws ecs update-service --cluster "$ECS_CLUSTER" --service "$API_ECS_SERVICE" --task-definition "$previous_api_task" >/dev/null || true
+              aws ecs update-service --cluster "$ECS_CLUSTER" --service "$WORKER_ECS_SERVICE" --task-definition "$previous_worker_task" >/dev/null || true
+              aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$API_ECS_SERVICE" "$WORKER_ECS_SERVICE" || true
+            fi
+            exit "$exit_code"
+          }
+          trap rollback ERR
+
+          previous_api_task=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$API_ECS_SERVICE" --query 'services[0].taskDefinition' --output text)
+          previous_worker_task=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$WORKER_ECS_SERVICE" --query 'services[0].taskDefinition' --output text)
+          [[ "$previous_api_task" == arn:* && "$previous_worker_task" == arn:* ]]
+
+          aws ecs describe-task-definition --task-definition "$previous_api_task" --query taskDefinition --output json | jq --arg image "$api_image" 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy,.deregisteredAt) | (.containerDefinitions[] | select(.name == "api") | .image) = $image' > api-task-definition.json
+          aws ecs describe-task-definition --task-definition "$previous_worker_task" --query taskDefinition --output json | jq --arg image "$worker_image" 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy,.deregisteredAt) | (.containerDefinitions[] | select(.name == "worker") | .image) = $image' > worker-task-definition.json
+          [[ "$(jq -r '.containerDefinitions[] | select(.name == "api") | .image' api-task-definition.json)" == "$api_image" ]]
+          [[ "$(jq -r '.containerDefinitions[] | select(.name == "worker") | .image' worker-task-definition.json)" == "$worker_image" ]]
+
+          new_api_task=$(aws ecs register-task-definition --cli-input-json file://api-task-definition.json --query taskDefinition.taskDefinitionArn --output text)
+          new_worker_task=$(aws ecs register-task-definition --cli-input-json file://worker-task-definition.json --query taskDefinition.taskDefinitionArn --output text)
+          deployment_started=true
+          aws ecs update-service --cluster "$ECS_CLUSTER" --service "$WORKER_ECS_SERVICE" --task-definition "$new_worker_task" >/dev/null
+          aws ecs update-service --cluster "$ECS_CLUSTER" --service "$API_ECS_SERVICE" --task-definition "$new_api_task" >/dev/null
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$API_ECS_SERVICE" "$WORKER_ECS_SERVICE"
+          active_api_task=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$API_ECS_SERVICE" --query 'services[0].taskDefinition' --output text)
+          active_worker_task=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$WORKER_ECS_SERVICE" --query 'services[0].taskDefinition' --output text)
+          [[ "$active_api_task" == "$new_api_task" && "$active_worker_task" == "$new_worker_task" ]] || { echo "ECS circuit breaker rolled back at least one service" >&2; false; }
+
+          api_origin=${API_URL%/}
+          healthy=false
+          for attempt in {1..18}; do
+            if curl --fail --silent --show-error "${api_origin}/health" >/dev/null && curl --fail --silent --show-error "${api_origin}/ready" >/dev/null; then
+              healthy=true
+              break
+            fi
+            sleep 10
+          done
+          [[ "$healthy" == true ]] || { echo "Post-deployment API verification failed" >&2; false; }
+          trap - ERR
+          echo "API ${new_api_task} and Worker ${new_worker_task} deployed from ${IMAGE_TAG}"
+
+      - name: Publish deployment summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Development deployment"
+            echo "- Commit: \`${IMAGE_TAG}\`"
+            echo "- Cluster: \`${ECS_CLUSTER}\`"
+            echo "- API service: \`${API_ECS_SERVICE}\`"
+            echo "- Worker service: \`${WORKER_ECS_SERVICE}\`"
+            echo "- Result: **${{ job.status }}**"
+          } >> "$GITHUB_STEP_SUMMARY"

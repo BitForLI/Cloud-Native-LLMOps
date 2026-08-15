@@ -22,6 +22,21 @@ run "single_nat_development_topology" {
     condition     = length(output.nat_gateway_ids) == 1
     error_message = "single mode must create exactly one NAT gateway."
   }
+
+  assert {
+    condition = toset(keys(output.deployment_github_variables)) == toset([
+      "API_ECR_REPOSITORY",
+      "API_ECS_SERVICE",
+      "API_URL",
+      "AWS_ACCOUNT_ID",
+      "AWS_DEPLOY_ROLE_ARN",
+      "AWS_REGION",
+      "ECS_CLUSTER",
+      "WORKER_ECR_REPOSITORY",
+      "WORKER_ECS_SERVICE",
+    ])
+    error_message = "Terraform must expose the complete non-secret GitHub deployment configuration."
+  }
 }
 
 run "per_az_nat_topology" {
@@ -289,6 +304,28 @@ run "iam_separates_runtime_and_deployment_permissions" {
       one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "PassOnlyPlatformRoles"]).Resource
     ) == 3
     error_message = "GitHub may only pass the three platform ECS roles."
+  }
+
+  assert {
+    condition = alltrue([
+      for action in ["ecr:DescribeImages", "ecr:DescribeImageScanFindings"] :
+      contains(
+        one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "EnforceImageScanGate"]).Action,
+        action
+      )
+    ])
+    error_message = "GitHub must read ECR vulnerability results before deployment."
+  }
+
+  assert {
+    condition = (
+      !contains(
+        one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "EnforceImageScanGate"]).Action,
+        "ecr:DeleteRepository"
+      ) &&
+      length(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "EnforceImageScanGate"]).Resource) == 2
+    )
+    error_message = "The scan gate must remain read-only and scoped to both service repositories."
   }
 
   assert {

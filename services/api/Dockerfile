@@ -11,6 +11,11 @@ FROM python:3.13.14-slim-bookworm AS runtime
 
 ARG APP_UID=10001
 ARG APP_GID=10001
+ARG BUILD_REVISION=unknown
+
+LABEL org.opencontainers.image.title="Cloud-Native LLMOps API" \
+      org.opencontainers.image.revision="${BUILD_REVISION}" \
+      org.opencontainers.image.source="https://github.com/BitForLI/Cloud-Native-LLMOps"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

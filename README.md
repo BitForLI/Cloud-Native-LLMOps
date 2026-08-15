@@ -127,6 +127,25 @@ Terraform inputs.
 3. Promotion: staging integration/eval checks precede production.
 4. Production: ECS blue/green deployment validates health and alarms; a failed deployment keeps or restores the prior task set.
 
+### Development continuous delivery
+
+After the complete `CI` workflow succeeds for a `master` push,
+`deploy-dev.yml` checks out that exact tested SHA and assumes the scoped AWS
+deployment role through GitHub OIDC. It builds and locally smoke-tests both
+hardened images, pushes immutable SHA tags, blocks HIGH/CRITICAL ECR scan
+findings, registers task definitions, and rolls API and Worker together.
+
+The workflow waits for ECS stability, verifies that the circuit breaker did not
+silently restore an older revision, then checks public `/health` and dependency
+`/ready`. Any deployment or smoke-test failure restores both previous task
+definitions. Concurrent deployments are serialized. If `AWS_DEPLOY_ROLE_ARN`
+is not configured, the deployment job is safely skipped while CI still runs.
+
+Configure the repository Actions variables listed by the Terraform
+`deployment_github_variables` output. AWS credentials are never stored in
+GitHub; only the non-secret role ARN, account/region, resource names, and API
+origin are required.
+
 ## Quality gate defaults
 
 - Exact-response evaluation score: `>= 0.90`

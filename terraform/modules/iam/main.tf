@@ -237,6 +237,15 @@ locals {
         Resource = local.ecr_repository_arns
       },
       {
+        Sid    = "EnforceImageScanGate"
+        Effect = "Allow"
+        Action = [
+          "ecr:DescribeImages",
+          "ecr:DescribeImageScanFindings",
+        ]
+        Resource = local.ecr_repository_arns
+      },
+      {
         Sid    = "RegisterTaskDefinitions"
         Effect = "Allow"
         Action = [

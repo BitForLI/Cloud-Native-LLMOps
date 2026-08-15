@@ -247,6 +247,11 @@ resource "aws_ecs_service" "api" {
     rollback = true
   }
 
+  lifecycle {
+    # GitHub Actions owns application revisions after Terraform bootstraps the service.
+    ignore_changes = [task_definition]
+  }
+
   network_configuration {
     assign_public_ip = false
     security_groups  = [aws_security_group.tasks.id]
@@ -277,6 +282,11 @@ resource "aws_ecs_service" "worker" {
   deployment_circuit_breaker {
     enable   = true
     rollback = true
+  }
+
+  lifecycle {
+    # GitHub Actions deploys API and Worker from the same immutable commit SHA.
+    ignore_changes = [task_definition]
   }
 
   network_configuration {

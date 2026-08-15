@@ -111,3 +111,18 @@ output "cloudwatch_alarm_names" {
   description = "CloudWatch alarms protecting the development platform."
   value       = module.monitoring.alarm_names
 }
+
+output "deployment_github_variables" {
+  description = "Repository variables required by the development deployment workflow."
+  value = {
+    AWS_ACCOUNT_ID        = split(":", module.iam.github_deploy_role_arn)[4]
+    AWS_DEPLOY_ROLE_ARN   = module.iam.github_deploy_role_arn
+    AWS_REGION            = var.aws_region
+    API_ECR_REPOSITORY    = module.api_ecr.repository_name
+    WORKER_ECR_REPOSITORY = module.worker_ecr.repository_name
+    ECS_CLUSTER           = module.ecs.cluster_name
+    API_ECS_SERVICE       = module.ecs.api_service_name
+    WORKER_ECS_SERVICE    = module.ecs.worker_service_name
+    API_URL               = "${var.alb_certificate_arn == null ? "http" : "https"}://${module.alb.load_balancer_dns_name}"
+  }
+}

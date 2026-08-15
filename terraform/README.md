@@ -119,3 +119,19 @@ Set `alarm_notification_emails` in the environment tfvars to enable email.
 Every recipient must confirm the SNS subscription before receiving alarm and
 recovery notifications. Threshold variables are validated and may be tuned per
 environment without editing the reusable module.
+
+## GitHub deployment variables
+
+After applying the development stack, read the values required by the CD
+workflow with:
+
+```bash
+terraform -chdir=terraform/environments/dev output -json deployment_github_variables
+```
+
+Create repository Actions variables with the returned names and values. They
+contain no static AWS credentials. The workflow uses `AWS_DEPLOY_ROLE_ARN` only
+to request a short-lived OIDC session, pushes images tagged with the tested
+40-character commit SHA, and updates both ECS services. Terraform ignores only
+the services' live `task_definition` revision so the CD workflow remains the
+application-release owner; all other ECS configuration stays Terraform-owned.
