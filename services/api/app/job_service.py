@@ -1,9 +1,20 @@
 import time
 from functools import lru_cache
 from threading import BoundedSemaphore, Event, Lock, Thread
+from typing import Annotated, Protocol
 
+import boto3
+from botocore.config import Config
+from fastapi import Depends
+
+from app.config import Settings, get_settings
 from app.metrics import Metrics, get_metrics
 from app.providers.base import LLMProvider, LLMProviderError
+from services.worker.app.aws_jobs import (
+    DurableJobStoreError,
+    DynamoDBJobRepository,
+    SQSJobQueue,
+)
 from services.worker.app.config import WorkerSettings
 from services.worker.app.jobs import (
     InMemoryJobQueue,
@@ -15,6 +26,19 @@ from services.worker.app.jobs import (
     poll_jobs,
     process_inference_job,
 )
+
+
+class JobService(Protocol):
+    def submit(self, prompt: str, provider: LLMProvider) -> JobRecord: ...
+
+    def get(self, job_id: str) -> JobRecord: ...
+
+    def check_ready(self) -> None: ...
+
+    def shutdown(self, wait: bool = True) -> None: ...
+
+
+_created_services: list[JobService] = []
 
 
 class LocalJobService:
@@ -62,6 +86,10 @@ class LocalJobService:
 
     def get(self, job_id: str) -> JobRecord:
         return self._repository.get(job_id)
+
+    def check_ready(self) -> None:
+        if self._closed:
+            raise JobCapacityError("The local job executor is closed.")
 
     def shutdown(self, wait: bool = True) -> None:
         with self._state_lock:
@@ -112,12 +140,78 @@ class LocalJobService:
             self._capacity.release()
 
 
-@lru_cache
-def get_job_service() -> LocalJobService:
-    return LocalJobService(WorkerSettings.from_env())
+class AwsJobService:
+    """Persist job state before publishing work to the durable SQS queue."""
+
+    def __init__(
+        self,
+        repository: DynamoDBJobRepository,
+        queue: SQSJobQueue,
+    ) -> None:
+        self._repository = repository
+        self._queue = queue
+
+    def submit(self, prompt: str, provider: LLMProvider) -> JobRecord:
+        del provider  # The independent worker owns model invocation in AWS mode.
+        record = self._repository.create()
+        task = JobTask(record.job_id, prompt)
+        try:
+            self._queue.publish(task)
+        except DurableJobStoreError:
+            # Avoid leaving an indefinitely pending record when enqueueing fails.
+            self._repository.mark_failed(
+                record.job_id,
+                handle_job_failure(task, RuntimeError(), error_code="enqueue_failed"),
+            )
+            raise
+        return record
+
+    def get(self, job_id: str) -> JobRecord:
+        return self._repository.get(job_id)
+
+    def check_ready(self) -> None:
+        self._repository.check_ready()
+        self._queue.check_ready()
+
+    def shutdown(self, wait: bool = True) -> None:
+        del wait
+
+
+def get_job_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> JobService:
+    return _get_cached_job_service(settings.model_dump_json())
+
+
+@lru_cache(maxsize=8)
+def _get_cached_job_service(serialized_settings: str) -> JobService:
+    settings = Settings.model_validate_json(serialized_settings)
+    if settings.job_backend == "memory":
+        service: JobService = LocalJobService(WorkerSettings.from_env())
+    else:
+        aws_config = Config(
+            connect_timeout=5,
+            read_timeout=25,
+            retries={"max_attempts": 3, "mode": "standard"},
+        )
+        dynamodb = boto3.client(
+            "dynamodb", region_name=settings.aws_region, config=aws_config
+        )
+        sqs = boto3.client("sqs", region_name=settings.aws_region, config=aws_config)
+        service = AwsJobService(
+            DynamoDBJobRepository(
+                dynamodb,
+                settings.job_table_name or "",
+                ttl_seconds=settings.job_ttl_seconds,
+            ),
+            SQSJobQueue(sqs, settings.inference_queue_url or ""),
+        )
+    _created_services.append(service)
+    return service
 
 
 def reset_job_service() -> None:
-    if get_job_service.cache_info().currsize:
-        get_job_service().shutdown()
-    get_job_service.cache_clear()
+    for service in _created_services:
+        service.shutdown()
+    _created_services.clear()
+    _get_cached_job_service.cache_clear()

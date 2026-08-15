@@ -267,6 +267,17 @@ variable "log_level" {
   }
 }
 
+variable "job_max_receive_count" {
+  description = "Receive attempts before the Worker marks a job failed and SQS redrives it."
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.job_max_receive_count >= 1 && var.job_max_receive_count <= 1000
+    error_message = "job_max_receive_count must be between 1 and 1000."
+  }
+}
+
 variable "api_secrets" {
   description = "Map of environment variable names to Secrets Manager valueFrom ARNs."
   type        = map(string)

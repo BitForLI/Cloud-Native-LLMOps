@@ -146,8 +146,10 @@ locals {
           Sid    = "CreateAndReadJobState"
           Effect = "Allow"
           Action = [
+            "dynamodb:DescribeTable",
             "dynamodb:GetItem",
             "dynamodb:PutItem",
+            "dynamodb:UpdateItem",
           ]
           Resource = [var.job_table_arn]
         },

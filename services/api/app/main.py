@@ -7,13 +7,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
-from app.job_service import LocalJobService, get_job_service
+from app.job_service import JobService, get_job_service
 from app.logging import configure_logging
 from app.metrics import Metrics, MetricsSnapshot, get_metrics
 from app.middleware import request_context_middleware
 from app.providers.base import LLMProvider, LLMProviderError
 from app.providers.bedrock import BedrockResponseError
 from app.providers.factory import get_provider
+from services.worker.app.aws_jobs import DurableJobStoreError
 from services.worker.app.jobs import (
     JobCapacityError,
     JobNotFoundError,
@@ -169,14 +170,35 @@ async def handle_job_capacity(
     )
 
 
+@app.exception_handler(DurableJobStoreError)
+async def handle_job_store_error(
+    request: Request,
+    exc: DurableJobStoreError,
+) -> JSONResponse:
+    request.state.error_type = type(exc).__name__
+    return JSONResponse(
+        status_code=503,
+        headers={"Retry-After": "5"},
+        content={
+            "error": {
+                "code": "job_service_unavailable",
+                "message": "The durable job service is temporarily unavailable.",
+                "request_id": getattr(request.state, "request_id", None),
+            }
+        },
+    )
+
+
 @app.get("/health")
 def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, str]:
     return {"status": "ok", "environment": settings.app_env}
 
 
 @app.get("/ready")
-def ready() -> dict[str, str]:
-    # Extend with Bedrock, DynamoDB, and S3 dependency checks during AWS integration.
+def ready(
+    job_service: Annotated[JobService, Depends(get_job_service)],
+) -> dict[str, str]:
+    job_service.check_ready()
     return {"status": "ready"}
 
 
@@ -248,7 +270,7 @@ def create_job(
     payload: CreateJobRequest,
     request: Request,
     provider: Annotated[LLMProvider, Depends(get_provider)],
-    job_service: Annotated[LocalJobService, Depends(get_job_service)],
+    job_service: Annotated[JobService, Depends(get_job_service)],
 ) -> JobResponse:
     request.state.model_id = provider.model_id
     return JobResponse.from_record(job_service.submit(payload.prompt, provider))
@@ -261,6 +283,6 @@ def create_job(
 )
 def get_job(
     job_id: str,
-    job_service: Annotated[LocalJobService, Depends(get_job_service)],
+    job_service: Annotated[JobService, Depends(get_job_service)],
 ) -> JobResponse:
     return JobResponse.from_record(job_service.get(job_id))

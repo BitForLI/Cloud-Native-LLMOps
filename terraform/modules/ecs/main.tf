@@ -14,6 +14,7 @@ locals {
     { name = "APP_ENV", value = var.environment },
     { name = "AWS_REGION", value = var.aws_region },
     { name = "LLM_PROVIDER", value = "bedrock" },
+    { name = "JOB_BACKEND", value = "aws" },
     { name = "BEDROCK_MODEL_ID", value = var.bedrock_model_id },
     { name = "ARTIFACT_BUCKET_NAME", value = var.artifact_bucket_name },
     { name = "JOB_TABLE_NAME", value = var.job_table_name },
@@ -21,6 +22,7 @@ locals {
     { name = "LOG_LEVEL", value = var.log_level },
   ]
   worker_environment = concat(local.api_environment, [
+    { name = "JOB_MAX_RECEIVE_COUNT", value = tostring(var.job_max_receive_count) },
     { name = "WORKER_HEARTBEAT_PATH", value = "/tmp/llmops-worker-heartbeat" },
     { name = "WORKER_HEARTBEAT_INTERVAL_SECONDS", value = "30" },
     { name = "WORKER_HEARTBEAT_MAX_AGE_SECONDS", value = "90" },

@@ -64,13 +64,17 @@ model, token, cost, and output metadata. Prompts are transient queue payloads,
 and public failures contain a stable error code rather than provider exception
 details.
 
-The current implementation is intentionally local: a bounded in-memory queue,
-thread-safe bounded job repository, and configurable worker threads run inside
-the API process. This makes local development and CI deterministic, but jobs do
-not survive a restart and cannot cross containers. The queue and repository
-interfaces are the replacement boundary for SQS and DynamoDB in the AWS phase;
-the standalone worker container currently provides lifecycle and health-check
-behavior until that durable adapter is connected.
+`JOB_BACKEND=memory` uses a bounded in-process queue and repository for
+deterministic local development. ECS sets `JOB_BACKEND=aws`: the API creates a
+TTL-backed DynamoDB record and sends a versioned SQS message; the independent
+Worker long-polls SQS, invokes Bedrock, conditionally updates DynamoDB, and only
+deletes a message after the result is durable. Standard-queue duplicate
+deliveries are idempotent, retryable failures remain unacknowledged, and final
+failures are retained for the configured DLQ redrive policy.
+
+The prompt exists only in the transient SQS payload. It is not stored in
+DynamoDB or application logs. `GET /ready` checks DynamoDB and SQS in AWS mode,
+while `/health` remains a shallow process health check for the ALB.
 
 Tune local resource bounds with `JOB_MAX_WORKERS`, `JOB_MAX_PENDING`,
 `JOB_MAX_STORED`, and `JOB_POLL_INTERVAL_SECONDS`. `JOB_MAX_STORED` must be at
@@ -87,8 +91,8 @@ guidance.
 
 The data layer adds a private versioned S3 artifact bucket, an encrypted
 on-demand DynamoDB job table with TTL/PITR, and an encrypted long-poll SQS queue
-with bounded retries and a 14-day dead-letter queue. Application traffic is not
-switched to these services until the durable adapter step.
+with bounded retries and a 14-day dead-letter queue. ECS explicitly selects the
+durable application backend for API and Worker tasks.
 
 IAM separates API producer, Worker consumer, ECS image/log delivery, and GitHub
 deployment permissions. GitHub uses short-lived OIDC credentials restricted to

@@ -9,6 +9,7 @@ def test_settings_have_safe_local_defaults():
     assert settings.app_env == "local"
     assert settings.aws_region == "ap-southeast-2"
     assert settings.llm_provider == "local"
+    assert settings.job_backend == "memory"
     assert settings.bedrock_model_id == "anthropic.claude-3-haiku-20240307-v1:0"
     assert settings.bedrock_max_tokens == 512
     assert settings.bedrock_temperature == 0.0
@@ -60,3 +61,16 @@ def test_settings_reject_invalid_bedrock_limits(field, value):
 def test_settings_reject_unknown_log_level():
     with pytest.raises(ValidationError):
         Settings(log_level="TRACE", _env_file=None)
+
+
+def test_aws_job_backend_requires_durable_resource_names():
+    with pytest.raises(ValidationError, match="JOB_TABLE_NAME"):
+        Settings(job_backend="aws", _env_file=None)
+
+    settings = Settings(
+        job_backend="aws",
+        job_table_name="jobs",
+        inference_queue_url="https://sqs.example/jobs",
+        _env_file=None,
+    )
+    assert settings.job_ttl_seconds == 604800

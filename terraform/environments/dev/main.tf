@@ -101,6 +101,7 @@ module "ecs" {
   artifact_bucket_name  = module.database.artifact_bucket_name
   job_table_name        = module.database.job_table_name
   inference_queue_url   = module.queue.queue_url
+  job_max_receive_count = var.job_max_receive_count
   api_desired_count     = var.api_desired_count
   worker_desired_count  = var.worker_desired_count
   log_retention_days    = var.log_retention_days

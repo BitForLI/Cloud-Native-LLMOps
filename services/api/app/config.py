@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     app_env: str = "local"
     aws_region: str = "ap-southeast-2"
     llm_provider: Literal["local", "bedrock"] = "local"
+    job_backend: Literal["memory", "aws"] = "memory"
+    job_table_name: str | None = None
+    inference_queue_url: str | None = None
+    job_ttl_seconds: int = Field(default=604800, ge=3600, le=31536000)
     bedrock_model_id: str = "anthropic.claude-3-haiku-20240307-v1:0"
     bedrock_max_tokens: int = Field(default=512, ge=1, le=8192)
     bedrock_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -26,6 +30,16 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def validate_aws_job_backend(self) -> "Settings":
+        if self.job_backend == "aws" and (
+            not self.job_table_name or not self.inference_queue_url
+        ):
+            raise ValueError(
+                "JOB_TABLE_NAME and INFERENCE_QUEUE_URL are required for JOB_BACKEND=aws"
+            )
+        return self
 
 
 @lru_cache

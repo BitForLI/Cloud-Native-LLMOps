@@ -234,6 +234,17 @@ run "iam_separates_runtime_and_deployment_permissions" {
   }
 
   assert {
+    condition = alltrue([
+      for action in ["dynamodb:DescribeTable", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"] :
+      contains(
+        one([for statement in jsondecode(local.api_task_policy).Statement : statement if statement.Sid == "CreateAndReadJobState"]).Action,
+        action
+      )
+    ])
+    error_message = "The API role must support durable job creation, readiness, reads, and enqueue failure updates."
+  }
+
+  assert {
     condition = !contains(
       one([for statement in jsondecode(local.api_task_policy).Statement : statement if statement.Sid == "SubmitInferenceJobs"]).Action,
       "sqs:ReceiveMessage"
@@ -483,6 +494,24 @@ run "ecs_hardens_private_api_and_worker_services" {
   assert {
     condition     = one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).healthCheck.command == ["CMD", "python", "-m", "services.worker.healthcheck"]
     error_message = "ECS must monitor the Worker heartbeat health check."
+  }
+
+  assert {
+    condition = alltrue([
+      for definition in [
+        one(jsondecode(aws_ecs_task_definition.api.container_definitions)),
+        one(jsondecode(aws_ecs_task_definition.worker.container_definitions)),
+      ] : one([for value in definition.environment : value.value if value.name == "JOB_BACKEND"]) == "aws"
+    ])
+    error_message = "Both ECS services must explicitly select the durable AWS job backend."
+  }
+
+  assert {
+    condition = one([
+      for value in one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).environment :
+      value.value if value.name == "JOB_MAX_RECEIVE_COUNT"
+    ]) == "5"
+    error_message = "Worker retry accounting must match the SQS redrive policy."
   }
 }
 

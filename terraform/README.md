@@ -57,12 +57,12 @@ keys do not belong in Terraform files.
 ## Durable job boundary
 
 Infrastructure now exposes the SQS queue URL, DynamoDB table name, and S3
-bucket name required by the distributed API/Worker adapters. This step creates
-the managed services only; the application still uses its explicitly documented
-process-local adapter until the dedicated application-adapter integration stage.
-The current Worker task therefore provides lifecycle/health behavior but does
-not consume SQS yet. Failed SQS messages remain in the DLQ for 14 days for
-inspection and controlled redrive.
+bucket name required by the distributed API/Worker adapters. ECS selects the
+AWS backend explicitly: the API creates and reads job state, then publishes SQS
+work; the Worker long-polls, invokes Bedrock, conditionally writes the result,
+and acknowledges only successful or already-successful deliveries. Transient
+failures retry, poison messages remain in the DLQ for 14 days, and prompts are
+never written to DynamoDB or logs.
 
 ## IAM boundaries
 

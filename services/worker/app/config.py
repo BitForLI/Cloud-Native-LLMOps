@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 
 def _positive_int(name: str, default: int) -> int:
@@ -25,6 +26,19 @@ def _positive_float(name: str, default: float) -> float:
     return value
 
 
+def _optional_non_negative_float(name: str) -> float | None:
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return None
+    try:
+        value = float(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a number") from exc
+    if value < 0:
+        raise ValueError(f"{name} must not be negative")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class WorkerSettings:
     """Validated settings shared by the local executor and worker container."""
@@ -35,6 +49,19 @@ class WorkerSettings:
     poll_interval_seconds: float = 0.25
     heartbeat_path: Path = Path("/tmp/llmops-worker-heartbeat")
     heartbeat_interval_seconds: float = 30.0
+    job_backend: Literal["memory", "aws"] = "memory"
+    aws_region: str = "ap-southeast-2"
+    job_table_name: str | None = None
+    inference_queue_url: str | None = None
+    job_max_receive_count: int = 5
+    sqs_wait_time_seconds: int = 20
+    bedrock_model_id: str = "anthropic.claude-3-haiku-20240307-v1:0"
+    bedrock_max_tokens: int = 512
+    bedrock_temperature: float = 0.0
+    bedrock_input_cost_per_million_tokens: float | None = None
+    bedrock_output_cost_per_million_tokens: float | None = None
+    bedrock_connect_timeout_seconds: int = 5
+    bedrock_read_timeout_seconds: int = 60
 
     def __post_init__(self) -> None:
         if self.max_workers < 1:
@@ -47,9 +74,24 @@ class WorkerSettings:
             raise ValueError("poll_interval_seconds must be positive")
         if self.heartbeat_interval_seconds <= 0:
             raise ValueError("heartbeat_interval_seconds must be positive")
+        if self.job_backend not in {"memory", "aws"}:
+            raise ValueError("job_backend must be memory or aws")
+        if self.job_backend == "aws" and (
+            not self.job_table_name or not self.inference_queue_url
+        ):
+            raise ValueError(
+                "JOB_TABLE_NAME and INFERENCE_QUEUE_URL are required for JOB_BACKEND=aws"
+            )
+        if not 0 <= self.sqs_wait_time_seconds <= 20:
+            raise ValueError("sqs_wait_time_seconds must be between 0 and 20")
+        if not 0 <= self.bedrock_temperature <= 1:
+            raise ValueError("bedrock_temperature must be between 0 and 1")
 
     @classmethod
     def from_env(cls) -> "WorkerSettings":
+        backend = os.getenv("JOB_BACKEND", "memory").lower()
+        if backend not in {"memory", "aws"}:
+            raise ValueError("JOB_BACKEND must be memory or aws")
         return cls(
             max_workers=_positive_int("JOB_MAX_WORKERS", 2),
             max_pending_jobs=_positive_int("JOB_MAX_PENDING", 100),
@@ -60,5 +102,28 @@ class WorkerSettings:
             ),
             heartbeat_interval_seconds=_positive_float(
                 "WORKER_HEARTBEAT_INTERVAL_SECONDS", 30.0
+            ),
+            job_backend=backend,
+            aws_region=os.getenv("AWS_REGION", "ap-southeast-2"),
+            job_table_name=os.getenv("JOB_TABLE_NAME"),
+            inference_queue_url=os.getenv("INFERENCE_QUEUE_URL"),
+            job_max_receive_count=_positive_int("JOB_MAX_RECEIVE_COUNT", 5),
+            sqs_wait_time_seconds=int(os.getenv("SQS_WAIT_TIME_SECONDS", "20")),
+            bedrock_model_id=os.getenv(
+                "BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0"
+            ),
+            bedrock_max_tokens=_positive_int("BEDROCK_MAX_TOKENS", 512),
+            bedrock_temperature=float(os.getenv("BEDROCK_TEMPERATURE", "0")),
+            bedrock_input_cost_per_million_tokens=_optional_non_negative_float(
+                "BEDROCK_INPUT_COST_PER_MILLION_TOKENS"
+            ),
+            bedrock_output_cost_per_million_tokens=_optional_non_negative_float(
+                "BEDROCK_OUTPUT_COST_PER_MILLION_TOKENS"
+            ),
+            bedrock_connect_timeout_seconds=_positive_int(
+                "BEDROCK_CONNECT_TIMEOUT_SECONDS", 5
+            ),
+            bedrock_read_timeout_seconds=_positive_int(
+                "BEDROCK_READ_TIMEOUT_SECONDS", 60
             ),
         )
