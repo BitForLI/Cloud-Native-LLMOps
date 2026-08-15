@@ -14,12 +14,12 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install API dependencies
-        run: pip install -r services/api/requirements.txt ruff pip-audit
+        run: pip install -r services/api/requirements-dev.txt ruff pip-audit
       - name: Lint
         run: ruff check services/api evals
       - name: Unit tests
-        run: PYTHONPATH=services/api pytest services/api/tests evals/test_eval.py
+        run: PYTHONPATH=services/api pytest services/api/tests services/worker/tests evals/test_eval.py
       - name: LLM evaluation quality gate
         run: python -m evals.run_eval
       - name: Dependency security scan
-        run: pip-audit -r services/api/requirements.txt
+        run: pip-audit -r services/api/requirements-dev.txt

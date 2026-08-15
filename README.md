@@ -27,6 +27,11 @@ docker compose up --build
 # http://localhost:8000/health
 ```
 
+The production images run as UID/GID `10001`, use read-only root filesystems,
+drop Linux capabilities, and expose container health checks. The API image is
+multi-stage and contains runtime dependencies only; development and test
+packages live in `services/api/requirements-dev.txt`.
+
 The API uses a deterministic local provider when `LLM_PROVIDER=local`. Set it
 to `bedrock` after completing the Bedrock runtime integration. Keeping the
 provider behind an interface makes tests and CI reproducible without AWS

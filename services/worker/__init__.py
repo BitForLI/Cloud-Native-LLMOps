@@ -1,0 +1,2 @@
+"""Asynchronous inference worker service."""
+

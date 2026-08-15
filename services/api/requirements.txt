@@ -3,5 +3,3 @@ uvicorn[standard]==0.34.0
 boto3==1.43.55
 pydantic==2.10.5
 pydantic-settings==2.7.1
-pytest==9.1.1
-httpx2==2.9.0
