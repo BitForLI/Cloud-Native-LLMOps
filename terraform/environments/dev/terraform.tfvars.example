@@ -5,6 +5,7 @@ availability_zone_count = 2
 nat_gateway_mode        = "single"
 job_visibility_timeout_seconds = 180
 job_max_receive_count           = 5
+alarm_notification_emails       = [] # e.g. ["platform@example.com"]
 bedrock_model_id                = "anthropic.claude-3-haiku-20240307-v1:0"
 api_image_tag                   = "bootstrap"
 worker_image_tag                = "bootstrap"

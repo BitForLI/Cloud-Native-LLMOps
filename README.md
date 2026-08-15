@@ -54,7 +54,17 @@ and error type. Prompt and response content are deliberately excluded.
 `GET /metrics` exposes the process-local request/error rate, LLM P50/P95
 latency, model error rate, token totals, and accumulated estimated cost. Cost
 rates are configuration values because Bedrock pricing varies by model and
-region. CloudWatch publishing is added in the infrastructure phase.
+region. API and Worker inference attempts also emit prompt-free CloudWatch
+Embedded Metric Format events for request count, model errors, latency, token
+usage, and estimated cost.
+
+The Terraform monitoring module builds a six-panel CloudWatch operations
+dashboard spanning ALB traffic/latency, ECS CPU/memory, SQS backlog/DLQ, LLM
+signals, and recent errors. Production-style 3-of-5 alarms cover HTTP and model
+error rates, P95 latency, resource saturation, queue age, and dead letters.
+Alarm and recovery notifications use an SNS topic protected by a rotating
+customer-managed KMS key; optional email recipients must confirm their SNS
+subscriptions before alerts are delivered.
 
 ### Asynchronous inference
 
@@ -104,6 +114,11 @@ public ALB reaches only API port `8000`; task definitions enforce non-root users
 read-only roots, writable Fargate-ephemeral `/tmp` mounts, container health checks, and
 separate runtime roles. Failed rolling deployments trigger the ECS deployment
 circuit breaker and automatic rollback.
+
+CloudWatch monitoring composes resource outputs directly: ALB/TG suffixes, ECS
+service names, SQS queue names, and log groups become dashboard and alarm
+dimensions. Alert thresholds and recipients remain validated per-environment
+Terraform inputs.
 
 ## Delivery model
 

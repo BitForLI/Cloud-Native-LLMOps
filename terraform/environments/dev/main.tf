@@ -115,3 +115,27 @@ module "ecs" {
     module.queue,
   ]
 }
+
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  name                                   = local.name
+  environment                            = var.environment
+  aws_region                             = var.aws_region
+  cluster_name                           = module.ecs.cluster_name
+  api_service_name                       = module.ecs.api_service_name
+  worker_service_name                    = module.ecs.worker_service_name
+  load_balancer_arn_suffix               = module.alb.load_balancer_arn_suffix
+  target_group_arn_suffix                = module.alb.api_target_group_arn_suffix
+  queue_name                             = module.queue.queue_name
+  dead_letter_queue_name                 = module.queue.dead_letter_queue_name
+  api_log_group_name                     = module.ecs.api_log_group_name
+  worker_log_group_name                  = module.ecs.worker_log_group_name
+  bedrock_model_id                       = var.bedrock_model_id
+  notification_emails                    = var.alarm_notification_emails
+  error_rate_threshold_percent           = var.alarm_error_rate_threshold_percent
+  p95_latency_threshold_ms               = var.alarm_p95_latency_threshold_ms
+  queue_age_threshold_seconds            = var.alarm_queue_age_threshold_seconds
+  resource_utilization_threshold_percent = var.alarm_resource_utilization_threshold_percent
+  tags                                   = local.common_tags
+}

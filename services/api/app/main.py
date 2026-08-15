@@ -14,6 +14,10 @@ from app.middleware import request_context_middleware
 from app.providers.base import LLMProvider, LLMProviderError
 from app.providers.bedrock import BedrockResponseError
 from app.providers.factory import get_provider
+from services.common.observability.emf import (
+    configure_emf_logging,
+    emit_inference_metrics,
+)
 from services.worker.app.aws_jobs import DurableJobStoreError
 from services.worker.app.jobs import (
     JobCapacityError,
@@ -23,6 +27,7 @@ from services.worker.app.jobs import (
 )
 
 configure_logging(get_settings().log_level)
+configure_emf_logging()
 app = FastAPI(title="LLMOps Inference API", version="0.1.0")
 app.middleware("http")(request_context_middleware)
 
@@ -228,17 +233,31 @@ def generate(
     request: Request,
     provider: Annotated[LLMProvider, Depends(get_provider)],
     metrics: Annotated[Metrics, Depends(get_metrics)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> GenerateResponse:
     request.state.model_id = provider.model_id
     started = time.perf_counter()
+    result = None
+    model_error = False
     try:
         result = provider.generate(payload.prompt)
     except Exception:
+        model_error = True
         metrics.record_model_error()
         raise
     finally:
         llm_latency_ms = (time.perf_counter() - started) * 1000
         metrics.record_llm_latency(llm_latency_ms)
+        emit_inference_metrics(
+            service="api",
+            environment=settings.app_env,
+            model=provider.model_id,
+            latency_ms=llm_latency_ms,
+            model_error=model_error,
+            input_tokens=result.input_tokens if result else None,
+            output_tokens=result.output_tokens if result else None,
+            estimated_cost_usd=result.estimated_cost if result else None,
+        )
 
     if result.input_tokens is not None and result.output_tokens is not None:
         metrics.record_token_usage(result.input_tokens, result.output_tokens)

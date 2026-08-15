@@ -11,6 +11,10 @@ from botocore.config import Config
 
 from services.common.llm.base import LLMProvider, LLMProviderError
 from services.common.llm.bedrock import BedrockProvider
+from services.common.observability.emf import (
+    configure_emf_logging,
+    emit_inference_metrics,
+)
 from services.worker.app.aws_jobs import (
     DurableJobStoreError,
     DynamoDBJobRepository,
@@ -50,11 +54,13 @@ class DurableJobProcessor:
         queue: SQSJobQueue,
         provider: LLMProvider,
         max_receive_count: int,
+        environment: str = "local",
     ) -> None:
         self._repository = repository
         self._queue = queue
         self._provider = provider
         self._max_receive_count = max_receive_count
+        self._environment = environment
 
     def process(self, message: ReceivedJob) -> None:
         record = self._repository.get(message.task.job_id)
@@ -68,17 +74,23 @@ class DurableJobProcessor:
             logger.warning("Final failed job %s is awaiting DLQ redrive.", record.job_id)
             return
 
+        self._repository.mark_running(message.task.job_id)
+        started = time.perf_counter()
         try:
-            self._repository.mark_running(message.task.job_id)
             outcome = process_inference_job(message.task, self._provider.generate)
-            self._repository.mark_succeeded(message.task.job_id, outcome)
-            self._queue.delete(message.receipt_handle)
-            logger.info("Completed inference job %s.", message.task.job_id)
         except Exception as error:  # noqa: BLE001 - delivery safety boundary
+            latency_ms = (time.perf_counter() - started) * 1000
             error_code = (
                 "provider_error"
                 if isinstance(error, LLMProviderError)
                 else "internal_error"
+            )
+            emit_inference_metrics(
+                service="worker",
+                environment=self._environment,
+                model=self._provider.model_id,
+                latency_ms=latency_ms,
+                model_error=True,
             )
             if message.receive_count >= self._max_receive_count:
                 try:
@@ -99,6 +111,22 @@ class DurableJobProcessor:
                 error_code,
                 type(error).__name__,
             )
+            return
+
+        latency_ms = (time.perf_counter() - started) * 1000
+        emit_inference_metrics(
+            service="worker",
+            environment=self._environment,
+            model=outcome.model_id,
+            latency_ms=latency_ms,
+            model_error=False,
+            input_tokens=outcome.input_tokens,
+            output_tokens=outcome.output_tokens,
+            estimated_cost_usd=outcome.estimated_cost,
+        )
+        self._repository.mark_succeeded(message.task.job_id, outcome)
+        self._queue.delete(message.receipt_handle)
+        logger.info("Completed inference job %s.", message.task.job_id)
 
 
 def run_durable_worker(
@@ -209,6 +237,7 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     settings = WorkerSettings.from_env()
+    configure_emf_logging()
     stop_event = Event()
     _install_signal_handlers(stop_event)
     if settings.job_backend == "aws":
@@ -230,6 +259,7 @@ def main() -> None:
             queue,
             BedrockProvider(settings),
             settings.job_max_receive_count,
+            settings.app_env,
         )
         run_durable_worker(
             stop_event,

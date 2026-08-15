@@ -19,6 +19,8 @@ creates the foundation needed by later ECS work:
 - an internet-facing ALB with private IP targets and optional HTTPS redirect;
 - hardened API and Worker Fargate tasks with retained CloudWatch logs;
 - ECS rolling-deployment circuit breakers with automatic rollback.
+- a CloudWatch operations dashboard, structured-log metric filters, and SLO alarms;
+- a customer-KMS-encrypted SNS topic with optional confirmed email notifications.
 
 The dev default uses one NAT gateway to control cost. Production should use
 `per_az` for zone-independent egress. NAT gateways incur hourly and data
@@ -104,3 +106,16 @@ terraform -chdir=terraform/environments/dev apply
 This stage uses ECS rolling deployments with deployment circuit breakers and
 rollback. CodeDeploy blue/green traffic shifting is introduced in the release
 automation stage rather than being simulated here.
+
+## Monitoring and notifications
+
+The monitoring module consumes ALB, ECS, SQS, and log-group outputs directly.
+It alarms on ALB 5xx rate and P95 latency, API/Worker CPU and memory, oldest SQS
+message age, any DLQ message, model error rate, and Worker LLM P95 latency.
+Missing traffic is non-breaching; missing ECS telemetry is breaching because it
+can indicate a vanished service.
+
+Set `alarm_notification_emails` in the environment tfvars to enable email.
+Every recipient must confirm the SNS subscription before receiving alarm and
+recovery notifications. Threshold variables are validated and may be tuned per
+environment without editing the reusable module.

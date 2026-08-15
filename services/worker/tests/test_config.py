@@ -7,12 +7,14 @@ def test_worker_settings_load_validated_environment(monkeypatch):
     monkeypatch.setenv("JOB_MAX_WORKERS", "3")
     monkeypatch.setenv("JOB_MAX_PENDING", "7")
     monkeypatch.setenv("JOB_MAX_STORED", "20")
+    monkeypatch.setenv("APP_ENV", "staging")
 
     settings = WorkerSettings.from_env()
 
     assert settings.max_workers == 3
     assert settings.max_pending_jobs == 7
     assert settings.max_stored_jobs == 20
+    assert settings.app_env == "staging"
 
 
 @pytest.mark.parametrize("value", ["0", "not-a-number"])

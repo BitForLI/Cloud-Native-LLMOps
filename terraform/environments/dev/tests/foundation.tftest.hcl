@@ -546,6 +546,162 @@ run "ecs_rejects_invalid_fargate_size" {
   expect_failures = [aws_ecs_task_definition.api]
 }
 
+run "monitoring_covers_platform_and_llm_failure_modes" {
+  command = apply
+
+  module {
+    source = "../../modules/monitoring"
+  }
+
+  override_data {
+    target = data.aws_partition.current
+    values = { partition = "aws" }
+  }
+
+  override_data {
+    target = data.aws_caller_identity.current
+    values = { account_id = "123456789012" }
+  }
+
+  override_resource {
+    target = aws_kms_key.alarms
+    values = {
+      arn    = "arn:aws:kms:ap-southeast-2:123456789012:key/00000000-0000-0000-0000-000000000000"
+      key_id = "00000000-0000-0000-0000-000000000000"
+    }
+  }
+
+  override_resource {
+    target = aws_sns_topic.alarms
+    values = {
+      arn = "arn:aws:sns:ap-southeast-2:123456789012:llmops-test-alarms"
+    }
+  }
+
+  variables {
+    name                         = "llmops-test"
+    environment                  = "test"
+    aws_region                   = "ap-southeast-2"
+    cluster_name                 = "llmops-cluster"
+    api_service_name             = "llmops-api"
+    worker_service_name          = "llmops-worker"
+    load_balancer_arn_suffix     = "app/llmops/0000000000000000"
+    target_group_arn_suffix      = "targetgroup/llmops/0000000000000000"
+    queue_name                   = "llmops-inference"
+    dead_letter_queue_name       = "llmops-inference-dlq"
+    api_log_group_name           = "/ecs/llmops/api"
+    worker_log_group_name        = "/ecs/llmops/worker"
+    bedrock_model_id             = "anthropic.test-model"
+    notification_emails          = ["platform@example.com"]
+    error_rate_threshold_percent = 5
+  }
+
+  assert {
+    condition = (
+      aws_sns_topic.alarms.kms_master_key_id == aws_kms_key.alarms.arn &&
+      aws_kms_key.alarms.enable_key_rotation &&
+      aws_kms_key.alarms.deletion_window_in_days == 30
+    )
+    error_message = "Alarm notifications must use a rotated, recoverably deleted customer KMS key."
+  }
+
+  assert {
+    condition = (
+      strcontains(aws_kms_key.alarms.policy, "cloudwatch.amazonaws.com") &&
+      strcontains(aws_kms_key.alarms.policy, "aws:SourceAccount") &&
+      strcontains(aws_sns_topic_policy.alarms.policy, "aws:SourceArn")
+    )
+    error_message = "KMS and SNS policies must scope the CloudWatch service integration against confused deputies."
+  }
+
+  assert {
+    condition     = length(aws_sns_topic_subscription.email) == 1
+    error_message = "Every configured notification email must receive a confirmable subscription."
+  }
+
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.alb_error_rate.threshold == 5 &&
+      aws_cloudwatch_metric_alarm.alb_error_rate.datapoints_to_alarm == 3 &&
+      aws_cloudwatch_metric_alarm.alb_error_rate.treat_missing_data == "notBreaching"
+    )
+    error_message = "ALB error rate must use a stable 3-of-5 production signal."
+  }
+
+  assert {
+    condition = (
+      length(aws_cloudwatch_metric_alarm.ecs_cpu) == 2 &&
+      length(aws_cloudwatch_metric_alarm.ecs_memory) == 2 &&
+      alltrue([for alarm in aws_cloudwatch_metric_alarm.ecs_cpu : alarm.treat_missing_data == "breaching"])
+    )
+    error_message = "Both ECS services need CPU, memory, and missing-telemetry protection."
+  }
+
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.dead_letter_messages.threshold == 0 &&
+      aws_cloudwatch_metric_alarm.queue_age.metric_name == "ApproximateAgeOfOldestMessage"
+    )
+    error_message = "Queue monitoring must detect both stuck and dead-lettered inference jobs."
+  }
+
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.model_error_rate.threshold == 5 &&
+      aws_cloudwatch_metric_alarm.llm_p95_latency.extended_statistic == "p95"
+    )
+    error_message = "LLM-specific error rate and P95 latency SLO alarms are required."
+  }
+
+  assert {
+    condition     = length(jsondecode(aws_cloudwatch_dashboard.this.dashboard_body).widgets) == 6
+    error_message = "The operations dashboard must contain all six platform signal groups."
+  }
+
+  assert {
+    condition = (
+      aws_cloudwatch_log_metric_filter.http_requests.metric_transformation[0].name == "HTTPRequestCount" &&
+      aws_cloudwatch_log_metric_filter.http_latency.metric_transformation[0].unit == "Milliseconds"
+    )
+    error_message = "Structured API logs must produce request count and latency metrics."
+  }
+}
+
+run "monitoring_rejects_unsafe_thresholds" {
+  command = plan
+
+  module {
+    source = "../../modules/monitoring"
+  }
+
+  variables {
+    name                                   = "llmops-test"
+    environment                            = "test"
+    aws_region                             = "ap-southeast-2"
+    cluster_name                           = "cluster"
+    api_service_name                       = "api"
+    worker_service_name                    = "worker"
+    load_balancer_arn_suffix               = "app/test/id"
+    target_group_arn_suffix                = "targetgroup/test/id"
+    queue_name                             = "queue"
+    dead_letter_queue_name                 = "queue-dlq"
+    api_log_group_name                     = "/ecs/api"
+    worker_log_group_name                  = "/ecs/worker"
+    bedrock_model_id                       = "model"
+    error_rate_threshold_percent           = 101
+    p95_latency_threshold_ms               = 0
+    queue_age_threshold_seconds            = 30
+    resource_utilization_threshold_percent = 0
+  }
+
+  expect_failures = [
+    var.error_rate_threshold_percent,
+    var.p95_latency_threshold_ms,
+    var.queue_age_threshold_seconds,
+    var.resource_utilization_threshold_percent,
+  ]
+}
+
 run "rejects_mutable_latest_image_tag" {
   command = plan
 

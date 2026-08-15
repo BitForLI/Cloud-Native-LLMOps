@@ -96,3 +96,18 @@ output "cloudwatch_log_groups" {
     worker = module.ecs.worker_log_group_name
   }
 }
+
+output "cloudwatch_dashboard_name" {
+  description = "Operations dashboard for API, Worker, queue, and LLM signals."
+  value       = module.monitoring.dashboard_name
+}
+
+output "alarm_topic_arn" {
+  description = "SNS topic receiving CloudWatch alarm state changes."
+  value       = module.monitoring.alarm_topic_arn
+}
+
+output "cloudwatch_alarm_names" {
+  description = "CloudWatch alarms protecting the development platform."
+  value       = module.monitoring.alarm_names
+}

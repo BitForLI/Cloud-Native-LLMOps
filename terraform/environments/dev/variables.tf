@@ -184,3 +184,33 @@ variable "log_retention_days" {
   type        = number
   default     = 30
 }
+
+variable "alarm_notification_emails" {
+  description = "Email addresses that confirm and receive CloudWatch alarm notifications."
+  type        = set(string)
+  default     = []
+}
+
+variable "alarm_error_rate_threshold_percent" {
+  description = "Maximum acceptable HTTP and model error rate."
+  type        = number
+  default     = 5
+}
+
+variable "alarm_p95_latency_threshold_ms" {
+  description = "Maximum acceptable P95 HTTP and LLM latency."
+  type        = number
+  default     = 3000
+}
+
+variable "alarm_queue_age_threshold_seconds" {
+  description = "Maximum age of the oldest pending inference message."
+  type        = number
+  default     = 300
+}
+
+variable "alarm_resource_utilization_threshold_percent" {
+  description = "Maximum sustained ECS CPU or memory utilization."
+  type        = number
+  default     = 80
+}

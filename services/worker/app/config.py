@@ -49,6 +49,7 @@ class WorkerSettings:
     poll_interval_seconds: float = 0.25
     heartbeat_path: Path = Path("/tmp/llmops-worker-heartbeat")
     heartbeat_interval_seconds: float = 30.0
+    app_env: str = "local"
     job_backend: Literal["memory", "aws"] = "memory"
     aws_region: str = "ap-southeast-2"
     job_table_name: str | None = None
@@ -76,6 +77,8 @@ class WorkerSettings:
             raise ValueError("heartbeat_interval_seconds must be positive")
         if self.job_backend not in {"memory", "aws"}:
             raise ValueError("job_backend must be memory or aws")
+        if not self.app_env.strip():
+            raise ValueError("app_env must not be empty")
         if self.job_backend == "aws" and (
             not self.job_table_name or not self.inference_queue_url
         ):
@@ -103,6 +106,7 @@ class WorkerSettings:
             heartbeat_interval_seconds=_positive_float(
                 "WORKER_HEARTBEAT_INTERVAL_SECONDS", 30.0
             ),
+            app_env=os.getenv("APP_ENV", "local"),
             job_backend=backend,
             aws_region=os.getenv("AWS_REGION", "ap-southeast-2"),
             job_table_name=os.getenv("JOB_TABLE_NAME"),
