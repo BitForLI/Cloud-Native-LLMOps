@@ -1,5 +1,6 @@
 locals {
-  name = "${var.project_name}-${var.environment}"
+  name     = "${var.project_name}-${var.environment}"
+  alb_name = "llmops-${var.environment}"
   common_tags = {
     Environment = var.environment
     ManagedBy   = "terraform"
@@ -65,4 +66,51 @@ module "iam" {
   github_oidc_provider_arn  = var.github_oidc_provider_arn
   github_oidc_subjects      = var.github_oidc_subjects
   tags                      = local.common_tags
+}
+
+module "alb" {
+  source = "../../modules/alb"
+
+  name                       = local.alb_name
+  vpc_id                     = module.networking.vpc_id
+  vpc_cidr                   = module.networking.vpc_cidr
+  public_subnet_ids          = module.networking.public_subnet_ids
+  certificate_arn            = var.alb_certificate_arn
+  enable_deletion_protection = false
+  tags                       = local.common_tags
+}
+
+module "ecs" {
+  source = "../../modules/ecs"
+
+  name                  = local.name
+  environment           = var.environment
+  aws_region            = var.aws_region
+  vpc_id                = module.networking.vpc_id
+  private_subnet_ids    = module.networking.private_subnet_ids
+  alb_security_group_id = module.alb.security_group_id
+  api_target_group_arn  = module.alb.api_target_group_arn
+  api_repository_url    = module.api_ecr.repository_url
+  worker_repository_url = module.worker_ecr.repository_url
+  api_image_tag         = var.api_image_tag
+  worker_image_tag      = var.worker_image_tag
+  execution_role_arn    = module.iam.execution_role_arn
+  api_task_role_arn     = module.iam.api_task_role_arn
+  worker_task_role_arn  = module.iam.worker_task_role_arn
+  bedrock_model_id      = var.bedrock_model_id
+  artifact_bucket_name  = module.database.artifact_bucket_name
+  job_table_name        = module.database.job_table_name
+  inference_queue_url   = module.queue.queue_url
+  api_desired_count     = var.api_desired_count
+  worker_desired_count  = var.worker_desired_count
+  log_retention_days    = var.log_retention_days
+  tags                  = local.common_tags
+
+  depends_on = [
+    module.networking,
+    module.alb,
+    module.iam,
+    module.database,
+    module.queue,
+  ]
 }

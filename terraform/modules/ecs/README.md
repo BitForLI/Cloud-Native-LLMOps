@@ -1,4 +1,6 @@
 # ECS module
 
-Will define the Fargate cluster, task definitions, service, health checks, deployment circuit breaker, and CloudWatch log groups. It deliberately depends on networking, IAM, ECR, and ALB module outputs.
-
+Creates the Fargate cluster, hardened API/Worker task definitions, rolling ECS
+services, container health checks, deployment circuit breakers, private task
+networking, and retained CloudWatch log groups. It consumes networking, IAM,
+ECR, ALB, queue, and data-module outputs.

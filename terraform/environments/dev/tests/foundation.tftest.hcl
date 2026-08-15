@@ -344,3 +344,186 @@ run "rejects_wildcard_bedrock_model" {
 
   expect_failures = [var.bedrock_model_ids]
 }
+
+run "alb_http_development_boundary" {
+  command = plan
+
+  module {
+    source = "../../modules/alb"
+  }
+
+  variables {
+    name              = "llmops-test"
+    vpc_id            = "vpc-0123456789abcdef0"
+    vpc_cidr          = "10.20.0.0/16"
+    public_subnet_ids = ["subnet-public-a", "subnet-public-b"]
+  }
+
+  assert {
+    condition     = !aws_lb.this.internal && aws_lb.this.drop_invalid_header_fields
+    error_message = "The ALB must be public and drop invalid headers."
+  }
+
+  assert {
+    condition     = aws_lb_target_group.api.target_type == "ip"
+    error_message = "Fargate targets must use the ip target type."
+  }
+
+  assert {
+    condition     = one(aws_lb_target_group.api.health_check).path == "/health"
+    error_message = "The API target group must use the health endpoint."
+  }
+
+  assert {
+    condition     = length(aws_lb_listener.http_forward) == 1 && length(aws_lb_listener.https) == 0
+    error_message = "Certificate-free development must expose only the forwarding HTTP listener."
+  }
+}
+
+run "alb_https_redirect_boundary" {
+  command = plan
+
+  module {
+    source = "../../modules/alb"
+  }
+
+  variables {
+    name              = "llmops-test"
+    vpc_id            = "vpc-0123456789abcdef0"
+    vpc_cidr          = "10.20.0.0/16"
+    public_subnet_ids = ["subnet-public-a", "subnet-public-b"]
+    certificate_arn   = "arn:aws:acm:ap-southeast-2:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+  }
+
+  assert {
+    condition     = length(aws_lb_listener.http_redirect) == 1 && length(aws_lb_listener.https) == 1
+    error_message = "A certificate must enable HTTPS and redirect HTTP."
+  }
+
+  assert {
+    condition     = aws_lb_listener.https[0].ssl_policy == "ELBSecurityPolicy-TLS13-1-2-Res-2021-06"
+    error_message = "HTTPS must use the configured TLS 1.2/1.3 policy."
+  }
+}
+
+run "ecs_hardens_private_api_and_worker_services" {
+  command = plan
+
+  module {
+    source = "../../modules/ecs"
+  }
+
+  variables {
+    name                  = "llmops-test"
+    environment           = "test"
+    aws_region            = "ap-southeast-2"
+    vpc_id                = "vpc-0123456789abcdef0"
+    private_subnet_ids    = ["subnet-private-a", "subnet-private-b"]
+    alb_security_group_id = "sg-0123456789abcdef0"
+    api_target_group_arn  = "arn:aws:elasticloadbalancing:ap-southeast-2:123456789012:targetgroup/llmops-api/0000000000000000"
+    api_repository_url    = "123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/llmops/api"
+    worker_repository_url = "123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/llmops/worker"
+    execution_role_arn    = "arn:aws:iam::123456789012:role/llmops-execution"
+    api_task_role_arn     = "arn:aws:iam::123456789012:role/llmops-api"
+    worker_task_role_arn  = "arn:aws:iam::123456789012:role/llmops-worker"
+    bedrock_model_id      = "anthropic.claude-3-haiku-20240307-v1:0"
+    artifact_bucket_name  = "llmops-artifacts"
+    job_table_name        = "llmops-jobs"
+    inference_queue_url   = "https://sqs.ap-southeast-2.amazonaws.com/123456789012/llmops-inference"
+  }
+
+  assert {
+    condition     = one(aws_ecs_cluster.this.setting).name == "containerInsights" && one(aws_ecs_cluster.this.setting).value == "enabled"
+    error_message = "ECS Container Insights must be enabled."
+  }
+
+  assert {
+    condition     = !one(aws_ecs_service.api.network_configuration).assign_public_ip && !one(aws_ecs_service.worker.network_configuration).assign_public_ip
+    error_message = "API and Worker tasks must not receive public IP addresses."
+  }
+
+  assert {
+    condition     = one(aws_ecs_service.api.deployment_circuit_breaker).enable && one(aws_ecs_service.api.deployment_circuit_breaker).rollback
+    error_message = "The API service must automatically roll back failed deployments."
+  }
+
+  assert {
+    condition     = one(aws_ecs_service.worker.deployment_circuit_breaker).enable && one(aws_ecs_service.worker.deployment_circuit_breaker).rollback
+    error_message = "The Worker service must automatically roll back failed deployments."
+  }
+
+  assert {
+    condition = (
+      one(jsondecode(aws_ecs_task_definition.api.container_definitions)).readonlyRootFilesystem &&
+      one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).readonlyRootFilesystem &&
+      one(jsondecode(aws_ecs_task_definition.api.container_definitions)).user == "10001:10001" &&
+      one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).user == "10001:10001"
+    )
+    error_message = "Both containers must run non-root with read-only root filesystems."
+  }
+
+  assert {
+    condition = (
+      one(one(jsondecode(aws_ecs_task_definition.api.container_definitions)).mountPoints).containerPath == "/tmp" &&
+      one(one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).mountPoints).containerPath == "/tmp" &&
+      !contains(keys(one(jsondecode(aws_ecs_task_definition.api.container_definitions)).linuxParameters), "tmpfs") &&
+      !contains(keys(one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).linuxParameters), "tmpfs")
+    )
+    error_message = "Fargate tasks must use supported writable /tmp bind mounts, not unsupported tmpfs."
+  }
+
+  assert {
+    condition = (
+      aws_ecs_task_definition.api.task_role_arn != aws_ecs_task_definition.worker.task_role_arn &&
+      aws_ecs_task_definition.api.execution_role_arn == aws_ecs_task_definition.worker.execution_role_arn
+    )
+    error_message = "Runtime roles must remain separate while execution delivery is shared."
+  }
+
+  assert {
+    condition     = one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).healthCheck.command == ["CMD", "python", "-m", "services.worker.healthcheck"]
+    error_message = "ECS must monitor the Worker heartbeat health check."
+  }
+}
+
+run "ecs_rejects_invalid_fargate_size" {
+  command = plan
+
+  module {
+    source = "../../modules/ecs"
+  }
+
+  variables {
+    name                  = "llmops-test"
+    environment           = "test"
+    aws_region            = "ap-southeast-2"
+    vpc_id                = "vpc-0123456789abcdef0"
+    private_subnet_ids    = ["subnet-private-a", "subnet-private-b"]
+    alb_security_group_id = "sg-0123456789abcdef0"
+    api_target_group_arn  = "arn:aws:elasticloadbalancing:ap-southeast-2:123456789012:targetgroup/llmops-api/0000000000000000"
+    api_repository_url    = "123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/llmops/api"
+    worker_repository_url = "123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/llmops/worker"
+    execution_role_arn    = "arn:aws:iam::123456789012:role/llmops-execution"
+    api_task_role_arn     = "arn:aws:iam::123456789012:role/llmops-api"
+    worker_task_role_arn  = "arn:aws:iam::123456789012:role/llmops-worker"
+    bedrock_model_id      = "test-model"
+    artifact_bucket_name  = "llmops-artifacts"
+    job_table_name        = "llmops-jobs"
+    inference_queue_url   = "https://sqs.ap-southeast-2.amazonaws.com/123456789012/llmops-inference"
+    api_cpu               = 256
+    api_memory            = 4096
+  }
+
+  expect_failures = [aws_ecs_task_definition.api]
+}
+
+run "rejects_mutable_latest_image_tag" {
+  command = plan
+
+  variables {
+    availability_zones = ["ap-southeast-2a", "ap-southeast-2b"]
+    api_image_tag      = "latest"
+  }
+
+  expect_failures = [var.api_image_tag]
+}

@@ -70,3 +70,29 @@ output "github_deploy_role_arn" {
   description = "OIDC deployment role configured as a GitHub environment variable."
   value       = module.iam.github_deploy_role_arn
 }
+
+output "api_url" {
+  description = "Public API origin URL."
+  value       = "${var.alb_certificate_arn == null ? "http" : "https"}://${module.alb.load_balancer_dns_name}"
+}
+
+output "ecs_cluster_name" {
+  description = "ECS cluster targeted by deployment workflows."
+  value       = module.ecs.cluster_name
+}
+
+output "ecs_service_names" {
+  description = "ECS service names keyed by component."
+  value = {
+    api    = module.ecs.api_service_name
+    worker = module.ecs.worker_service_name
+  }
+}
+
+output "cloudwatch_log_groups" {
+  description = "Container log groups keyed by component."
+  value = {
+    api    = module.ecs.api_log_group_name
+    worker = module.ecs.worker_log_group_name
+  }
+}

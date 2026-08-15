@@ -132,3 +132,55 @@ variable "github_oidc_subjects" {
     error_message = "github_oidc_subjects must contain exact repo: subjects without wildcards."
   }
 }
+
+variable "alb_certificate_arn" {
+  description = "Optional ACM certificate for HTTPS; null leaves dev on HTTP."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.alb_certificate_arn == null || can(regex("^arn:[^:]+:acm:[^:]+:[0-9]{12}:certificate/", var.alb_certificate_arn))
+    error_message = "alb_certificate_arn must be null or a concrete ACM certificate ARN."
+  }
+}
+
+variable "api_image_tag" {
+  description = "Immutable API image tag that must already exist before ECS apply."
+  type        = string
+  default     = "bootstrap"
+
+  validation {
+    condition     = var.api_image_tag != "latest" && can(regex("^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$", var.api_image_tag))
+    error_message = "api_image_tag must be a valid immutable tag and cannot be latest."
+  }
+}
+
+variable "worker_image_tag" {
+  description = "Immutable Worker image tag that must already exist before ECS apply."
+  type        = string
+  default     = "bootstrap"
+
+  validation {
+    condition     = var.worker_image_tag != "latest" && can(regex("^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$", var.worker_image_tag))
+    error_message = "worker_image_tag must be a valid immutable tag and cannot be latest."
+  }
+}
+
+variable "api_desired_count" {
+  description = "Number of API tasks in development."
+  type        = number
+  default     = 1
+}
+
+variable "worker_desired_count" {
+  description = "Number of Worker tasks in development."
+  type        = number
+  default     = 1
+}
+
+variable "log_retention_days" {
+  description = "CloudWatch container log retention."
+  type        = number
+  default     = 30
+}

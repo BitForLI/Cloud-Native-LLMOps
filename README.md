@@ -95,6 +95,12 @@ deployment permissions. GitHub uses short-lived OIDC credentials restricted to
 this repository's immutable identity and `master`; no static AWS access keys are
 required.
 
+ECS Fargate runs the API and Worker in private subnets without public IPs. The
+public ALB reaches only API port `8000`; task definitions enforce non-root users,
+read-only roots, writable Fargate-ephemeral `/tmp` mounts, container health checks, and
+separate runtime roles. Failed rolling deployments trigger the ECS deployment
+circuit breaker and automatic rollback.
+
 ## Delivery model
 
 1. PR: format/lint, unit tests, evaluation quality gate, dependency security scan.

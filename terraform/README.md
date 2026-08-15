@@ -16,6 +16,9 @@ creates the foundation needed by later ECS work:
 - an encrypted long-poll SQS inference queue with bounded retries and a DLQ.
 - separate least-privilege ECS execution, API, Worker, and GitHub deploy roles;
 - GitHub OIDC federation restricted to exact immutable repository subjects.
+- an internet-facing ALB with private IP targets and optional HTTPS redirect;
+- hardened API and Worker Fargate tasks with retained CloudWatch logs;
+- ECS rolling-deployment circuit breakers with automatic rollback.
 
 The dev default uses one NAT gateway to control cost. Production should use
 `per_az` for zone-independent egress. NAT gateways incur hourly and data
@@ -56,8 +59,10 @@ keys do not belong in Terraform files.
 Infrastructure now exposes the SQS queue URL, DynamoDB table name, and S3
 bucket name required by the distributed API/Worker adapters. This step creates
 the managed services only; the application still uses its explicitly documented
-process-local adapter until the following integration step. Failed SQS messages
-remain in the DLQ for 14 days for inspection and controlled redrive.
+process-local adapter until the dedicated application-adapter integration stage.
+The current Worker task therefore provides lifecycle/health behavior but does
+not consume SQS yet. Failed SQS messages remain in the DLQ for 14 days for
+inspection and controlled redrive.
 
 ## IAM boundaries
 
@@ -71,3 +76,31 @@ The development trust uses GitHub's immutable subject for repository ID
 `1320235086` under owner ID `218609705`, restricted to `master`. If an account
 already has the account-wide GitHub OIDC provider, set
 `github_oidc_provider_arn` instead of attempting to create a duplicate.
+
+## ECS bootstrap
+
+The ECS services run only in private subnets, receive no public IP addresses,
+run as UID/GID `10001`, use read-only root filesystems plus writable `/tmp`, and
+publish logs to `/ecs/<stack>/api|worker`. The ALB is the only source permitted
+to reach API port `8000`; tasks have outbound HTTPS for AWS APIs. Because
+Fargate does not support Docker `tmpfs`, each read-only container receives a
+writable task-ephemeral bind mount at `/tmp`.
+
+ECR repositories are immutable and intentionally reject `latest`. Before the
+first ECS apply, build and push both images using the tags supplied in
+`api_image_tag` and `worker_image_tag` (the dev example uses `bootstrap`). A
+certificate enables HTTPS with automatic HTTP redirect; certificate-free dev
+uses HTTP and must not be treated as a production endpoint.
+
+For a new account, bootstrap the repositories before the full stack:
+
+```bash
+terraform -chdir=terraform/environments/dev apply \
+  -target=module.api_ecr -target=module.worker_ecr
+# authenticate Docker, then build and push API and Worker with the bootstrap tag
+terraform -chdir=terraform/environments/dev apply
+```
+
+This stage uses ECS rolling deployments with deployment circuit breakers and
+rollback. CodeDeploy blue/green traffic shifting is introduced in the release
+automation stage rather than being simulated here.
