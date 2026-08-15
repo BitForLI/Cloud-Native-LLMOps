@@ -12,6 +12,10 @@ services:
       APP_ENV: ${APP_ENV:-local}
       LLM_PROVIDER: ${LLM_PROVIDER:-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      JOB_MAX_WORKERS: ${JOB_MAX_WORKERS:-2}
+      JOB_MAX_PENDING: ${JOB_MAX_PENDING:-100}
+      JOB_MAX_STORED: ${JOB_MAX_STORED:-1000}
+      JOB_POLL_INTERVAL_SECONDS: ${JOB_POLL_INTERVAL_SECONDS:-0.25}
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
@@ -47,11 +51,15 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      JOB_MAX_WORKERS: ${JOB_MAX_WORKERS:-2}
+      JOB_MAX_PENDING: ${JOB_MAX_PENDING:-100}
+      JOB_MAX_STORED: ${JOB_MAX_STORED:-1000}
+      JOB_POLL_INTERVAL_SECONDS: ${JOB_POLL_INTERVAL_SECONDS:-0.25}
       WORKER_HEARTBEAT_PATH: /tmp/llmops-worker-heartbeat
       WORKER_HEARTBEAT_INTERVAL_SECONDS: 30
       WORKER_HEARTBEAT_MAX_AGE_SECONDS: 90
     healthcheck:
-      test: ["CMD", "python", "healthcheck.py"]
+      test: ["CMD", "python", "-m", "services.worker.healthcheck"]
       interval: 30s
       timeout: 3s
       start_period: 10s
@@ -72,4 +80,3 @@ services:
 networks:
   backend:
     driver: bridge
-

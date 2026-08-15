@@ -28,6 +28,9 @@ RUN python -m pip install --no-index --no-compile --find-links=/wheels -r requir
     && rm -rf /wheels requirements.txt
 
 COPY --chown=app:app services/api/app ./app
+COPY --chown=app:app services/__init__.py ./services/__init__.py
+COPY --chown=app:app services/worker/__init__.py ./services/worker/__init__.py
+COPY --chown=app:app services/worker/app ./services/worker/app
 
 USER app
 EXPOSE 8000

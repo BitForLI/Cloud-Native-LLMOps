@@ -14,7 +14,7 @@ GitHub PR -> lint / pytest / LLM evaluation / security scan
 ## Repository layout
 
 - `services/api`: FastAPI inference service and health endpoints.
-- `services/worker`: asynchronous job worker placeholder.
+- `services/worker`: reusable asynchronous job domain and worker runtime.
 - `evals`: deterministic, CI-friendly LLM evaluation dataset and quality gate.
 - `terraform`: reusable AWS modules and per-environment stacks.
 - `.github/workflows`: pull-request validation and build/deploy workflow.
@@ -55,6 +55,26 @@ and error type. Prompt and response content are deliberately excluded.
 latency, model error rate, token totals, and accumulated estimated cost. Cost
 rates are configuration values because Bedrock pricing varies by model and
 region. CloudWatch publishing is added in the infrastructure phase.
+
+### Asynchronous inference
+
+Submit work with `POST /v1/jobs` and poll `GET /v1/jobs/{job_id}`. Jobs move
+through `pending -> running -> succeeded|failed`; completed responses include
+model, token, cost, and output metadata. Prompts are transient queue payloads,
+and public failures contain a stable error code rather than provider exception
+details.
+
+The current implementation is intentionally local: a bounded in-memory queue,
+thread-safe bounded job repository, and configurable worker threads run inside
+the API process. This makes local development and CI deterministic, but jobs do
+not survive a restart and cannot cross containers. The queue and repository
+interfaces are the replacement boundary for SQS and DynamoDB in the AWS phase;
+the standalone worker container currently provides lifecycle and health-check
+behavior until that durable adapter is connected.
+
+Tune local resource bounds with `JOB_MAX_WORKERS`, `JOB_MAX_PENDING`,
+`JOB_MAX_STORED`, and `JOB_POLL_INTERVAL_SECONDS`. `JOB_MAX_STORED` must be at
+least `JOB_MAX_PENDING`.
 
 ## Delivery model
 

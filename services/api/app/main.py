@@ -1,17 +1,25 @@
 import time
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
+from app.job_service import LocalJobService, get_job_service
 from app.logging import configure_logging
 from app.metrics import Metrics, MetricsSnapshot, get_metrics
 from app.middleware import request_context_middleware
 from app.providers.base import LLMProvider, LLMProviderError
 from app.providers.bedrock import BedrockResponseError
 from app.providers.factory import get_provider
+from services.worker.app.jobs import (
+    JobCapacityError,
+    JobNotFoundError,
+    JobRecord,
+    JobStatus,
+)
 
 configure_logging(get_settings().log_level)
 app = FastAPI(title="LLMOps Inference API", version="0.1.0")
@@ -29,6 +37,38 @@ class GenerateResponse(BaseModel):
     input_tokens: int | None = None
     output_tokens: int | None = None
     estimated_cost: float | None = None
+
+
+class CreateJobRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=8000)
+
+
+class JobResponse(BaseModel):
+    job_id: str
+    status: JobStatus
+    created_at: datetime
+    updated_at: datetime
+    output: str | None = None
+    model: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    estimated_cost: float | None = None
+    error_code: str | None = None
+
+    @classmethod
+    def from_record(cls, record: JobRecord) -> "JobResponse":
+        return cls(
+            job_id=record.job_id,
+            status=record.status,
+            created_at=record.created_at,
+            updated_at=record.updated_at,
+            output=record.output,
+            model=record.model_id,
+            input_tokens=record.input_tokens,
+            output_tokens=record.output_tokens,
+            estimated_cost=record.estimated_cost,
+            error_code=record.error_code,
+        )
 
 
 class ErrorDetail(BaseModel):
@@ -89,6 +129,43 @@ async def handle_provider_error(
         code="llm_provider_unavailable",
         message="The model service is temporarily unavailable.",
         headers={"Retry-After": "5"},
+    )
+
+
+@app.exception_handler(JobNotFoundError)
+async def handle_job_not_found(
+    request: Request,
+    exc: JobNotFoundError,
+) -> JSONResponse:
+    request.state.error_type = type(exc).__name__
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": {
+                "code": "job_not_found",
+                "message": "The requested job does not exist.",
+                "request_id": getattr(request.state, "request_id", None),
+            }
+        },
+    )
+
+
+@app.exception_handler(JobCapacityError)
+async def handle_job_capacity(
+    request: Request,
+    exc: JobCapacityError,
+) -> JSONResponse:
+    request.state.error_type = type(exc).__name__
+    return JSONResponse(
+        status_code=503,
+        headers={"Retry-After": "1"},
+        content={
+            "error": {
+                "code": "job_capacity_exceeded",
+                "message": "The job service is temporarily at capacity.",
+                "request_id": getattr(request.state, "request_id", None),
+            }
+        },
     )
 
 
@@ -154,3 +231,36 @@ def generate(
         output_tokens=result.output_tokens,
         estimated_cost=result.estimated_cost,
     )
+
+
+@app.post(
+    "/v1/jobs",
+    response_model=JobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        503: {
+            "model": ErrorResponse,
+            "description": "The bounded local job executor is at capacity.",
+        }
+    },
+)
+def create_job(
+    payload: CreateJobRequest,
+    request: Request,
+    provider: Annotated[LLMProvider, Depends(get_provider)],
+    job_service: Annotated[LocalJobService, Depends(get_job_service)],
+) -> JobResponse:
+    request.state.model_id = provider.model_id
+    return JobResponse.from_record(job_service.submit(payload.prompt, provider))
+
+
+@app.get(
+    "/v1/jobs/{job_id}",
+    response_model=JobResponse,
+    responses={404: {"model": ErrorResponse, "description": "The job does not exist."}},
+)
+def get_job(
+    job_id: str,
+    job_service: Annotated[LocalJobService, Depends(get_job_service)],
+) -> JobResponse:
+    return JobResponse.from_record(job_service.get(job_id))
