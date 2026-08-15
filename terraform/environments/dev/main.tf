@@ -51,3 +51,18 @@ module "queue" {
   max_receive_count          = var.job_max_receive_count
   tags                       = local.common_tags
 }
+
+module "iam" {
+  source = "../../modules/iam"
+
+  name                      = local.name
+  api_ecr_repository_arn    = module.api_ecr.repository_arn
+  worker_ecr_repository_arn = module.worker_ecr.repository_arn
+  artifact_bucket_arn       = module.database.artifact_bucket_arn
+  job_table_arn             = module.database.job_table_arn
+  inference_queue_arn       = module.queue.queue_arn
+  bedrock_model_ids         = [var.bedrock_model_id]
+  github_oidc_provider_arn  = var.github_oidc_provider_arn
+  github_oidc_subjects      = var.github_oidc_subjects
+  tags                      = local.common_tags
+}

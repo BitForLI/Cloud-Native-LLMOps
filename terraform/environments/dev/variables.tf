@@ -101,3 +101,34 @@ variable "job_max_receive_count" {
     error_message = "job_max_receive_count must be between 1 and 1000."
   }
 }
+
+variable "bedrock_model_id" {
+  description = "Bedrock foundation model runtime roles may invoke."
+  type        = string
+  default     = "anthropic.claude-3-haiku-20240307-v1:0"
+
+  validation {
+    condition     = length(trimspace(var.bedrock_model_id)) > 0 && !strcontains(var.bedrock_model_id, "*")
+    error_message = "bedrock_model_id must be concrete and must not contain wildcards."
+  }
+}
+
+variable "github_oidc_provider_arn" {
+  description = "Existing account-level GitHub OIDC provider ARN; null creates it."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "github_oidc_subjects" {
+  description = "Exact GitHub OIDC subjects permitted to deploy this environment."
+  type        = set(string)
+  default = [
+    "repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:ref:refs/heads/master"
+  ]
+
+  validation {
+    condition     = length(var.github_oidc_subjects) > 0 && alltrue([for subject in var.github_oidc_subjects : startswith(subject, "repo:") && !strcontains(subject, "*")])
+    error_message = "github_oidc_subjects must contain exact repo: subjects without wildcards."
+  }
+}

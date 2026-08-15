@@ -14,6 +14,8 @@ creates the foundation needed by later ECS work:
 - a private, versioned, TLS-only S3 artifact bucket with lifecycle controls;
 - an encrypted on-demand DynamoDB job table with TTL and point-in-time recovery;
 - an encrypted long-poll SQS inference queue with bounded retries and a DLQ.
+- separate least-privilege ECS execution, API, Worker, and GitHub deploy roles;
+- GitHub OIDC federation restricted to exact immutable repository subjects.
 
 The dev default uses one NAT gateway to control cost. Production should use
 `per_az` for zone-independent egress. NAT gateways incur hourly and data
@@ -56,3 +58,16 @@ bucket name required by the distributed API/Worker adapters. This step creates
 the managed services only; the application still uses its explicitly documented
 process-local adapter until the following integration step. Failed SQS messages
 remain in the DLQ for 14 days for inspection and controlled redrive.
+
+## IAM boundaries
+
+The API can submit SQS messages but cannot consume them; the Worker can consume
+and delete messages but cannot submit them. Bedrock access is limited to the
+configured model, data access is limited to this stack's S3/DynamoDB resources,
+and GitHub can push only to the two service repositories, update the two ECS
+services, and pass only the three platform roles.
+
+The development trust uses GitHub's immutable subject for repository ID
+`1320235086` under owner ID `218609705`, restricted to `master`. If an account
+already has the account-wide GitHub OIDC provider, set
+`github_oidc_provider_arn` instead of attempting to create a duplicate.

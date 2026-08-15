@@ -50,3 +50,23 @@ output "inference_dead_letter_queue_url" {
   description = "SQS DLQ URL used for failed-job inspection and redrive."
   value       = module.queue.dead_letter_queue_url
 }
+
+output "ecs_execution_role_arn" {
+  description = "Role ECS uses for image pulls and container log delivery."
+  value       = module.iam.execution_role_arn
+}
+
+output "api_task_role_arn" {
+  description = "Least-privilege runtime role for the API."
+  value       = module.iam.api_task_role_arn
+}
+
+output "worker_task_role_arn" {
+  description = "Least-privilege runtime role for the Worker."
+  value       = module.iam.worker_task_role_arn
+}
+
+output "github_deploy_role_arn" {
+  description = "OIDC deployment role configured as a GitHub environment variable."
+  value       = module.iam.github_deploy_role_arn
+}

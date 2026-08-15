@@ -90,6 +90,11 @@ on-demand DynamoDB job table with TTL/PITR, and an encrypted long-poll SQS queue
 with bounded retries and a 14-day dead-letter queue. Application traffic is not
 switched to these services until the durable adapter step.
 
+IAM separates API producer, Worker consumer, ECS image/log delivery, and GitHub
+deployment permissions. GitHub uses short-lived OIDC credentials restricted to
+this repository's immutable identity and `master`; no static AWS access keys are
+required.
+
 ## Delivery model
 
 1. PR: format/lint, unit tests, evaluation quality gate, dependency security scan.

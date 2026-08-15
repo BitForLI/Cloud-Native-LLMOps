@@ -204,3 +204,143 @@ run "rejects_dlq_retention_shorter_than_source" {
 
   expect_failures = [var.dead_letter_retention_seconds]
 }
+
+run "iam_separates_runtime_and_deployment_permissions" {
+  command = apply
+
+  module {
+    source = "../../modules/iam"
+  }
+
+  variables {
+    name                      = "llmops-test"
+    api_ecr_repository_arn    = "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/api"
+    worker_ecr_repository_arn = "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/worker"
+    artifact_bucket_arn       = "arn:aws:s3:::llmops-artifacts"
+    job_table_arn             = "arn:aws:dynamodb:ap-southeast-2:123456789012:table/llmops-jobs"
+    inference_queue_arn       = "arn:aws:sqs:ap-southeast-2:123456789012:llmops-inference"
+    bedrock_model_ids         = ["anthropic.claude-3-haiku-20240307-v1:0"]
+    github_oidc_subjects = [
+      "repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:ref:refs/heads/master"
+    ]
+  }
+
+  assert {
+    condition = contains(
+      one([for statement in jsondecode(local.api_task_policy).Statement : statement if statement.Sid == "SubmitInferenceJobs"]).Action,
+      "sqs:SendMessage"
+    )
+    error_message = "The API role must be able to submit inference jobs."
+  }
+
+  assert {
+    condition = !contains(
+      one([for statement in jsondecode(local.api_task_policy).Statement : statement if statement.Sid == "SubmitInferenceJobs"]).Action,
+      "sqs:ReceiveMessage"
+    )
+    error_message = "The API role must not consume inference jobs."
+  }
+
+  assert {
+    condition = contains(
+      one([for statement in jsondecode(local.worker_task_policy).Statement : statement if statement.Sid == "ConsumeInferenceJobs"]).Action,
+      "sqs:ReceiveMessage"
+    )
+    error_message = "The Worker role must be able to consume inference jobs."
+  }
+
+  assert {
+    condition = !contains(
+      one([for statement in jsondecode(local.worker_task_policy).Statement : statement if statement.Sid == "ConsumeInferenceJobs"]).Action,
+      "sqs:SendMessage"
+    )
+    error_message = "The Worker role must not submit inference jobs."
+  }
+
+  assert {
+    condition = endswith(
+      one(one([for statement in jsondecode(local.api_task_policy).Statement : statement if statement.Sid == "InvokeConfiguredModels"]).Resource),
+      ":foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
+    )
+    error_message = "Bedrock invocation must be scoped to the configured model."
+  }
+
+  assert {
+    condition = strcontains(
+      local.github_trust_policy,
+      "repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:ref:refs/heads/master"
+    ) && !strcontains(local.github_trust_policy, "repo:BitForLI/*")
+    error_message = "GitHub trust must use an exact immutable repository subject."
+  }
+
+  assert {
+    condition = length(
+      one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "PassOnlyPlatformRoles"]).Resource
+    ) == 3
+    error_message = "GitHub may only pass the three platform ECS roles."
+  }
+
+  assert {
+    condition = one(one(
+      [for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "PassOnlyPlatformRoles"]
+    ).Condition.StringEquals["iam:PassedToService"]) == "ecs-tasks.amazonaws.com"
+    error_message = "PassRole must be restricted to ECS tasks."
+  }
+
+  assert {
+    condition     = aws_iam_openid_connect_provider.github[0].client_id_list == toset(["sts.amazonaws.com"])
+    error_message = "The GitHub OIDC provider audience must be AWS STS."
+  }
+
+  assert {
+    condition = (
+      length(local.execution_policy) <= 10240 &&
+      length(local.api_task_policy) <= 10240 &&
+      length(local.worker_task_policy) <= 10240 &&
+      length(local.github_deploy_policy) <= 10240
+    )
+    error_message = "Every inline role policy must stay within the IAM 10240-character quota."
+  }
+}
+
+run "rejects_wildcard_github_subject" {
+  command = plan
+
+  module {
+    source = "../../modules/iam"
+  }
+
+  variables {
+    name                      = "llmops-test"
+    api_ecr_repository_arn    = "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/api"
+    worker_ecr_repository_arn = "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/worker"
+    artifact_bucket_arn       = "arn:aws:s3:::llmops-artifacts"
+    job_table_arn             = "arn:aws:dynamodb:ap-southeast-2:123456789012:table/llmops-jobs"
+    inference_queue_arn       = "arn:aws:sqs:ap-southeast-2:123456789012:llmops-inference"
+    bedrock_model_ids         = ["test-model"]
+    github_oidc_subjects      = ["repo:BitForLI/*"]
+  }
+
+  expect_failures = [var.github_oidc_subjects]
+}
+
+run "rejects_wildcard_bedrock_model" {
+  command = plan
+
+  module {
+    source = "../../modules/iam"
+  }
+
+  variables {
+    name                      = "llmops-test"
+    api_ecr_repository_arn    = "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/api"
+    worker_ecr_repository_arn = "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/worker"
+    artifact_bucket_arn       = "arn:aws:s3:::llmops-artifacts"
+    job_table_arn             = "arn:aws:dynamodb:ap-southeast-2:123456789012:table/llmops-jobs"
+    inference_queue_arn       = "arn:aws:sqs:ap-southeast-2:123456789012:llmops-inference"
+    bedrock_model_ids         = ["*"]
+    github_oidc_subjects      = ["repo:example/repository:ref:refs/heads/main"]
+  }
+
+  expect_failures = [var.bedrock_model_ids]
+}

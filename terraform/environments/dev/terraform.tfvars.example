@@ -5,6 +5,10 @@ availability_zone_count = 2
 nat_gateway_mode        = "single"
 job_visibility_timeout_seconds = 180
 job_max_receive_count           = 5
+bedrock_model_id                = "anthropic.claude-3-haiku-20240307-v1:0"
+
+# If the AWS account already has the GitHub provider, pass its ARN to avoid a duplicate.
+# github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
 
 # Pin zones only when deterministic placement is required.
 # availability_zones = ["ap-southeast-2a", "ap-southeast-2b"]
