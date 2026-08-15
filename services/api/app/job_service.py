@@ -180,7 +180,7 @@ class AwsJobService:
 def get_job_service(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> JobService:
-    return _get_cached_job_service(settings.model_dump_json())
+    return _get_cached_job_service(settings.dependency_cache_json())
 
 
 @lru_cache(maxsize=8)

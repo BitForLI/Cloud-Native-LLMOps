@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import os
+import re
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -30,15 +32,21 @@ def validate_base_url(value: str) -> str:
 
 
 def remote_predictor(
-    base_url: str, timeout_seconds: float = 15.0
+    base_url: str, api_token: str, timeout_seconds: float = 15.0
 ) -> Callable[[str], Prediction]:
     origin = validate_base_url(base_url)
+    if not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", api_token):
+        raise ValueError("API token must contain 32-128 URL-safe characters")
 
     def predict(prompt: str) -> Prediction:
         request = Request(
             f"{origin}/v1/generate",
             data=json.dumps({"prompt": prompt}).encode("utf-8"),
-            headers={"Content-Type": "application/json", "User-Agent": "llmops-staging-eval/1"},
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "llmops-release-eval/1",
+                "X-API-Key": api_token,
+            },
             method="POST",
         )
         with urlopen(request, timeout=timeout_seconds) as response:
@@ -64,11 +72,16 @@ def remote_predictor(
     return predict
 
 
-def run_cli(base_url: str, dataset_path: Path = REMOTE_DATASET) -> int:
+def run_cli(
+    base_url: str,
+    dataset_path: Path = REMOTE_DATASET,
+    api_token: str | None = None,
+) -> int:
+    token = api_token if api_token is not None else os.environ.get("EVAL_API_TOKEN", "")
     cases = load_dataset(dataset_path)
     _, report = run_evaluation(
         cases,
-        predictor=remote_predictor(base_url),
+        predictor=remote_predictor(base_url, token),
         config=EvalConfig.from_env(),
     )
     print(json.dumps(report.to_dict(), indent=2, sort_keys=True))

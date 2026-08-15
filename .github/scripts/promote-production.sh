@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-required=(AWS_ACCOUNT_ID AWS_REGION STAGING_API_ECR_REPOSITORY STAGING_WORKER_ECR_REPOSITORY PRODUCTION_API_ECR_REPOSITORY PRODUCTION_WORKER_ECR_REPOSITORY ECS_CLUSTER API_ECS_SERVICE WORKER_ECS_SERVICE API_URL CODEDEPLOY_APPLICATION CODEDEPLOY_DEPLOYMENT_GROUP IMAGE_TAG)
+required=(AWS_ACCOUNT_ID AWS_REGION STAGING_API_ECR_REPOSITORY STAGING_WORKER_ECR_REPOSITORY PRODUCTION_API_ECR_REPOSITORY PRODUCTION_WORKER_ECR_REPOSITORY ECS_CLUSTER API_ECS_SERVICE WORKER_ECS_SERVICE API_URL API_AUTH_SECRET_ID CODEDEPLOY_APPLICATION CODEDEPLOY_DEPLOYMENT_GROUP IMAGE_TAG)
 for name in "${required[@]}"; do
   [[ -n "${!name:-}" ]] || { echo "Missing required variable: ${name}" >&2; exit 1; }
 done
 [[ "$IMAGE_TAG" =~ ^[0-9a-f]{40}$ ]] || { echo "IMAGE_TAG must be a 40-character commit SHA" >&2; exit 1; }
 [[ "$API_URL" =~ ^https://[^/]+/?$ ]] || { echo "Production API_URL must be an HTTPS origin" >&2; exit 1; }
+
+API_AUTH_TOKEN=$(aws secretsmanager get-secret-value --secret-id "$API_AUTH_SECRET_ID" --query SecretString --output text)
+[[ "$API_AUTH_TOKEN" =~ ^[A-Za-z0-9_-]{32,128}$ ]] || { echo "Production API authentication secret must contain 32-128 URL-safe characters" >&2; exit 1; }
+echo "::add-mask::${API_AUTH_TOKEN}"
+export EVAL_API_TOKEN="$API_AUTH_TOKEN"
+auth_header=(--header "X-API-Key: ${API_AUTH_TOKEN}")
 
 scan_gate() {
   local repository="$1"
@@ -99,7 +105,7 @@ api_origin=${API_URL%/}
 (
   while true; do
     curl --max-time 10 --silent --show-error "${api_origin}/health" >/dev/null || true
-    curl --max-time 20 --silent --show-error -H 'Content-Type: application/json' -d '{"prompt":"Reply with exactly CANARY and nothing else."}' "${api_origin}/v1/generate" >/dev/null || true
+    curl --max-time 20 --silent --show-error "${auth_header[@]}" -H 'Content-Type: application/json' -d '{"prompt":"Reply with exactly CANARY and nothing else."}' "${api_origin}/v1/generate" >/dev/null || true
     sleep 15
   done
 ) &
@@ -115,12 +121,14 @@ active_api_task=$(aws ecs describe-task-sets --cluster "$ECS_CLUSTER" --service 
 health=$(curl --fail --silent --show-error "${api_origin}/health")
 [[ "$(jq -r '.status' <<<"$health")" == "ok" && "$(jq -r '.environment' <<<"$health")" == "production" ]]
 curl --fail --silent --show-error "${api_origin}/ready" | jq -e '.status == "ready"' >/dev/null
+unauthenticated_status=$(curl --silent --output /dev/null --write-out '%{http_code}' -H 'Content-Type: application/json' -d '{"prompt":"must be rejected"}' "${api_origin}/v1/generate")
+[[ "$unauthenticated_status" == "401" ]] || { echo "Production inference endpoint accepted an unauthenticated request" >&2; false; }
 python -m evals.run_remote_eval --base-url "$api_origin"
 
-job_id=$(curl --fail --silent --show-error -H 'Content-Type: application/json' -d '{"prompt":"production worker release verification"}' "${api_origin}/v1/jobs" | jq -er '.job_id')
+job_id=$(curl --fail --silent --show-error "${auth_header[@]}" -H 'Content-Type: application/json' -d '{"prompt":"production worker release verification"}' "${api_origin}/v1/jobs" | jq -er '.job_id')
 job_succeeded=false
 for attempt in {1..36}; do
-  job=$(curl --fail --silent --show-error "${api_origin}/v1/jobs/${job_id}")
+  job=$(curl --fail --silent --show-error "${auth_header[@]}" "${api_origin}/v1/jobs/${job_id}")
   case "$(jq -r '.status' <<<"$job")" in
     succeeded) jq -e '.output | type == "string" and length > 0' <<<"$job" >/dev/null; job_succeeded=true; break ;;
     failed) echo "Production asynchronous inference failed" >&2; false ;;

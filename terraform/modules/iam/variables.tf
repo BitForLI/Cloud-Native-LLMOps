@@ -106,13 +106,46 @@ variable "secret_arns" {
 }
 
 variable "kms_key_arns" {
-  description = "Optional KMS keys required by injected secrets or application data."
+  description = "Optional KMS keys required directly by application runtime data operations."
   type        = set(string)
   default     = []
 
   validation {
     condition     = alltrue([for arn in var.kms_key_arns : can(regex("^arn:[^:]+:kms:", arn)) && !strcontains(arn, "*")])
     error_message = "kms_key_arns must contain concrete KMS key ARNs."
+  }
+}
+
+variable "secret_kms_key_arns" {
+  description = "KMS keys used only by the ECS execution role to decrypt injected secrets."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for arn in var.secret_kms_key_arns : can(regex("^arn:[^:]+:kms:", arn)) && !strcontains(arn, "*")])
+    error_message = "secret_kms_key_arns must contain concrete KMS key ARNs."
+  }
+}
+
+variable "github_verification_secret_arns" {
+  description = "Secrets the deployment role may read only for authenticated release verification."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for arn in var.github_verification_secret_arns : can(regex("^arn:[^:]+:secretsmanager:", arn)) && !strcontains(arn, "*")])
+    error_message = "github_verification_secret_arns must contain concrete Secrets Manager ARNs."
+  }
+}
+
+variable "github_verification_kms_key_arns" {
+  description = "KMS keys the deployment role may use to decrypt release-verification secrets."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for arn in var.github_verification_kms_key_arns : can(regex("^arn:[^:]+:kms:", arn)) && !strcontains(arn, "*")])
+    error_message = "github_verification_kms_key_arns must contain concrete KMS key ARNs."
   }
 }
 

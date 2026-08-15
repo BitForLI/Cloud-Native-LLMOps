@@ -26,6 +26,11 @@ output "github_deploy_role_arn" {
   value       = module.iam.github_deploy_role_arn
 }
 
+output "api_auth_secret_name" {
+  description = "Secrets Manager container populated outside Terraform for API authentication."
+  value       = module.secrets.api_auth_secret_name
+}
+
 output "cloudwatch_dashboard_name" {
   description = "Staging operations dashboard."
   value       = module.monitoring.dashboard_name
@@ -40,6 +45,7 @@ output "staging_safety_profile" {
     log_retention_days       = var.log_retention_days
     data_deletion_protection = module.database.job_table_deletion_protection_enabled
     load_balancer_protection = module.alb.deletion_protection_enabled
+    encrypted_api_auth       = module.secrets.kms_key_rotation_enabled
   }
 }
 
@@ -55,5 +61,6 @@ output "deployment_github_variables" {
     API_ECS_SERVICE               = module.ecs.api_service_name
     WORKER_ECS_SERVICE            = module.ecs.worker_service_name
     API_URL                       = "https://${module.alb.load_balancer_dns_name}"
+    API_AUTH_SECRET_ID            = module.secrets.api_auth_secret_name
   }
 }

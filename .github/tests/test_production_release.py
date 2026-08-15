@@ -55,6 +55,10 @@ def test_release_promotes_digest_uses_codedeploy_and_recovers_both_services():
         'taskSets[?status==\'PRIMARY\']',
         "Worker circuit breaker restored",
         "python -m evals.run_remote_eval",
+        "secretsmanager get-secret-value",
+        "::add-mask::",
+        'X-API-Key: ${API_AUTH_TOKEN}',
+        'unauthenticated_status" == "401',
         '"${api_origin}/v1/jobs/${job_id}"',
     ):
         assert fragment in script
@@ -72,6 +76,7 @@ def test_release_configuration_is_complete():
         "API_ECS_SERVICE",
         "WORKER_ECS_SERVICE",
         "API_URL",
+        "API_AUTH_SECRET_ID",
         "CODEDEPLOY_APPLICATION",
         "CODEDEPLOY_DEPLOYMENT_GROUP",
         "IMAGE_TAG",

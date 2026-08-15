@@ -21,6 +21,7 @@ creates the foundation needed by later ECS work:
 - ECS rolling-deployment circuit breakers with automatic rollback.
 - a CloudWatch operations dashboard, structured-log metric filters, and SLO alarms;
 - a customer-KMS-encrypted SNS topic with optional confirmed email notifications.
+- an empty Secrets Manager API-token container encrypted by a rotating customer KMS key.
 
 The dev default uses one NAT gateway to control cost. Production should use
 `per_az` for zone-independent egress. NAT gateways incur hourly and data
@@ -100,14 +101,23 @@ first ECS apply, build and push both images using the tags supplied in
 certificate enables HTTPS with automatic HTTP redirect; certificate-free dev
 uses HTTP and must not be treated as a production endpoint.
 
-For a new account, bootstrap the repositories before the full stack:
+For a new account, bootstrap the repositories and secret before the full stack:
 
 ```bash
 terraform -chdir=terraform/environments/dev apply \
-  -target=module.api_ecr -target=module.worker_ecr
+  -target=module.api_ecr -target=module.worker_ecr -target=module.secrets
 # authenticate Docker, then build and push API and Worker with the bootstrap tag
+API_AUTH_TOKEN="$(openssl rand -hex 32)"
+aws secretsmanager put-secret-value \
+  --secret-id "$(terraform -chdir=terraform/environments/dev output -raw api_auth_secret_name)" \
+  --secret-string "$API_AUTH_TOKEN"
+unset API_AUTH_TOKEN
 terraform -chdir=terraform/environments/dev apply
 ```
+
+Repeat the secret bootstrap independently in every environment. Rotating the
+value creates a new `AWSCURRENT` version; force a new API deployment afterward
+because ECS resolves injected secrets only when a task starts.
 
 This stage uses ECS rolling deployments with deployment circuit breakers and
 rollback. CodeDeploy blue/green traffic shifting is introduced in the release

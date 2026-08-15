@@ -5,9 +5,11 @@ automatic rollback, a rolling Worker circuit breaker, immutable artifact
 promotion from staging, and a reviewer-gated GitHub environment.
 
 Copy the tfvars and backend examples, replace account-specific values, and use
-a two-phase bootstrap: first target both ECR modules, copy one scanned staging
-SHA into the new repositories, set both image tags to that SHA, then apply the
-full stack. The CodeDeploy service needs a healthy initial blue task set.
+a two-phase bootstrap: first target both ECR modules and `module.secrets`,
+populate `api_auth_secret_name` with a random 32-128 character URL-safe value,
+copy one scanned staging SHA into the new repositories, set both image tags to
+that SHA, then apply the full stack. The CodeDeploy service needs a healthy
+initial blue task set.
 
 ```bash
 terraform -chdir=terraform/environments/production init -backend-config=backend.s3.tfbackend

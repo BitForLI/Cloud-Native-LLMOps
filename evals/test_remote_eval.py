@@ -30,12 +30,14 @@ def test_remote_predictor_posts_prompt_and_maps_usage():
         ).encode()
     )
     with patch("evals.run_remote_eval.urlopen", return_value=response) as mocked:
-        prediction = remote_predictor("https://staging.example.com")("prompt")
+        prediction = remote_predictor("https://staging.example.com", "a" * 32)("prompt")
 
     request = mocked.call_args.args[0]
     assert request.full_url == "https://staging.example.com/v1/generate"
     assert json.loads(request.data) == {"prompt": "prompt"}
     assert prediction.output == "AWS"
+    request = mocked.call_args.args[0]
+    assert request.get_header("X-api-key") == "a" * 32
     assert prediction.estimated_cost_usd == 0.00001
 
 
@@ -61,4 +63,9 @@ def test_remote_cli_fails_quality_regression(tmp_path: Path):
     )
     payload = json.dumps({"output": "REGRESSED", "model": "model", "estimated_cost": 0}).encode()
     with patch("evals.run_remote_eval.urlopen", return_value=FakeResponse(payload)):
-        assert run_cli("https://staging.example.com", dataset) == 1
+        assert run_cli("https://staging.example.com", dataset, "a" * 32) == 1
+
+
+def test_remote_predictor_rejects_missing_or_weak_authentication():
+    with pytest.raises(ValueError, match="32-128 URL-safe"):
+        remote_predictor("https://staging.example.com", "short")

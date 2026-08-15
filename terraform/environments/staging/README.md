@@ -17,7 +17,9 @@ terraform -chdir=terraform/environments/staging output -json deployment_github_v
 ```
 
 Bootstrap is intentionally two-phase because ECS may only reference an image
-that already exists. First apply `module.api_ecr` and `module.worker_ecr`, copy
+that already exists and a populated secret. First apply `module.api_ecr`,
+`module.worker_ecr`, and `module.secrets`; populate the returned
+`api_auth_secret_name` with a random 32-128 character URL-safe value; then copy
 one already-scanned dev SHA into those repositories with ECR `batch-get-image`
 and `put-image`, set both image-tag variables to that SHA, then perform the full
 apply. Later releases use the protected workflow and need no manual copying.
@@ -27,3 +29,5 @@ Add the output values to the protected GitHub `staging` environment. Also add
 OIDC subject, not a branch subject, is the only principal trusted to promote.
 Configure required reviewers and a deployment-branch rule allowing only
 `master`; the workflow independently rejects dispatches from any other ref.
+`API_AUTH_SECRET_ID` is a non-secret identifier. The scoped OIDC role retrieves
+and masks its value only while release verification is running.

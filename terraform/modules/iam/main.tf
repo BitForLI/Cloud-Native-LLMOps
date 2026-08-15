@@ -71,11 +71,11 @@ locals {
       Action   = ["secretsmanager:GetSecretValue"]
       Resource = sort(tolist(var.secret_arns))
     }] : [],
-    length(var.kms_key_arns) > 0 ? [{
+    length(var.secret_kms_key_arns) > 0 ? [{
       Sid      = "DecryptInjectedSecrets"
       Effect   = "Allow"
       Action   = ["kms:Decrypt"]
-      Resource = sort(tolist(var.kms_key_arns))
+      Resource = sort(tolist(var.secret_kms_key_arns))
     }] : [],
   )
   execution_policy = jsonencode({
@@ -297,6 +297,18 @@ locals {
         Condition = {
           StringEquals = { "iam:PassedToService" = ["ecs-tasks.amazonaws.com"] }
         }
+      },
+      length(var.github_verification_secret_arns) == 0 ? null : {
+        Sid      = "ReadReleaseVerificationSecret"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = sort(tolist(var.github_verification_secret_arns))
+      },
+      length(var.github_verification_kms_key_arns) == 0 ? null : {
+        Sid      = "DecryptReleaseVerificationSecret"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = sort(tolist(var.github_verification_kms_key_arns))
       },
     ] : statement if statement != null]
   })

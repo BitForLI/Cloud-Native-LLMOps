@@ -7,6 +7,7 @@ def test_settings_have_safe_local_defaults():
     settings = Settings(_env_file=None)
 
     assert settings.app_env == "local"
+    assert settings.api_auth_token is None
     assert settings.aws_region == "ap-southeast-2"
     assert settings.llm_provider == "local"
     assert settings.job_backend == "memory"
@@ -20,6 +21,7 @@ def test_settings_have_safe_local_defaults():
 
 def test_settings_read_environment_variables(monkeypatch):
     monkeypatch.setenv("APP_ENV", "staging")
+    monkeypatch.setenv("API_AUTH_TOKEN", "s" * 32)
     monkeypatch.setenv("AWS_REGION", "us-east-1")
     monkeypatch.setenv("LLM_PROVIDER", "bedrock")
     monkeypatch.setenv("BEDROCK_MODEL_ID", "example-model")
@@ -32,6 +34,7 @@ def test_settings_read_environment_variables(monkeypatch):
     settings = Settings(_env_file=None)
 
     assert settings.app_env == "staging"
+    assert settings.api_auth_token.get_secret_value() == "s" * 32
     assert settings.aws_region == "us-east-1"
     assert settings.llm_provider == "bedrock"
     assert settings.bedrock_model_id == "example-model"
@@ -74,3 +77,20 @@ def test_aws_job_backend_requires_durable_resource_names():
         _env_file=None,
     )
     assert settings.job_ttl_seconds == 604800
+
+
+@pytest.mark.parametrize("app_env", ["dev", "staging", "production"])
+def test_deployed_environments_require_strong_api_token(app_env):
+    with pytest.raises(ValidationError, match="API_AUTH_TOKEN"):
+        Settings(app_env=app_env, _env_file=None)
+
+    with pytest.raises(ValidationError):
+        Settings(app_env=app_env, api_auth_token="short", _env_file=None)
+
+    with pytest.raises(ValidationError, match="URL-safe"):
+        Settings(app_env=app_env, api_auth_token="x" * 31 + "\n", _env_file=None)
+
+    settings = Settings(app_env=app_env, api_auth_token="x" * 32, _env_file=None)
+    assert settings.api_auth_token.get_secret_value() == "x" * 32
+    assert "api_auth_token" not in settings.dependency_cache_json()
+    assert "x" * 32 not in settings.dependency_cache_json()

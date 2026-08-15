@@ -1,4 +1,10 @@
-mock_provider "aws" {}
+mock_provider "aws" {
+  mock_resource "aws_secretsmanager_secret" {
+    defaults = {
+      arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:mock-api-auth-AbCdEf"
+    }
+  }
+}
 
 run "single_nat_development_topology" {
   command = plan
@@ -202,6 +208,49 @@ run "queue_resilience_defaults" {
     condition     = jsondecode(aws_sqs_queue_redrive_allow_policy.dead_letter.redrive_allow_policy).sourceQueueArns == [aws_sqs_queue.inference.arn]
     error_message = "The DLQ must only accept redrive from the inference queue."
   }
+}
+
+run "secret_values_stay_out_of_terraform_state" {
+  command = apply
+
+  module { source = "../../modules/secrets" }
+
+  variables {
+    name = "llmops-production"
+  }
+
+  assert {
+    condition = (
+      aws_kms_key.secrets.enable_key_rotation &&
+      aws_kms_key.secrets.deletion_window_in_days == 30 &&
+      aws_secretsmanager_secret.api_auth_token.kms_key_id == aws_kms_key.secrets.arn &&
+      aws_secretsmanager_secret.api_auth_token.recovery_window_in_days == 30 &&
+      aws_secretsmanager_secret_policy.api_auth_token.block_public_policy
+    )
+    error_message = "Application secrets must use a rotating CMK, recovery windows, and public-policy blocking."
+  }
+
+  assert {
+    condition     = !strcontains(jsonencode(aws_secretsmanager_secret.api_auth_token), "secret_string")
+    error_message = "The module must never place a secret value in Terraform state."
+  }
+}
+
+run "rejects_irrecoverable_secret_windows" {
+  command = plan
+
+  module { source = "../../modules/secrets" }
+
+  variables {
+    name                        = "llmops-dev"
+    kms_deletion_window_days    = 6
+    secret_recovery_window_days = 0
+  }
+
+  expect_failures = [
+    var.kms_deletion_window_days,
+    var.secret_recovery_window_days,
+  ]
 }
 
 run "rejects_dlq_retention_shorter_than_source" {
@@ -483,6 +532,9 @@ run "ecs_hardens_private_api_and_worker_services" {
     artifact_bucket_name  = "llmops-artifacts"
     job_table_name        = "llmops-jobs"
     inference_queue_url   = "https://sqs.ap-southeast-2.amazonaws.com/123456789012/llmops-inference"
+    api_secrets = {
+      API_AUTH_TOKEN = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:llmops-test/api-auth-token-AbCdEf"
+    }
   }
 
   assert {
@@ -546,6 +598,15 @@ run "ecs_hardens_private_api_and_worker_services" {
       ] : one([for value in definition.environment : value.value if value.name == "JOB_BACKEND"]) == "aws"
     ])
     error_message = "Both ECS services must explicitly select the durable AWS job backend."
+  }
+
+  assert {
+    condition = (
+      one(one(jsondecode(aws_ecs_task_definition.api.container_definitions)).secrets).name == "API_AUTH_TOKEN" &&
+      one(one(jsondecode(aws_ecs_task_definition.api.container_definitions)).secrets).valueFrom == "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:llmops-test/api-auth-token-AbCdEf" &&
+      length(one(jsondecode(aws_ecs_task_definition.worker.container_definitions)).secrets) == 0
+    )
+    error_message = "Only the API task must receive the authentication token through ECS secret injection."
   }
 
   assert {

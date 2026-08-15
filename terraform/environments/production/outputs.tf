@@ -18,6 +18,11 @@ output "cloudwatch_dashboard_name" {
   value       = module.monitoring.dashboard_name
 }
 
+output "api_auth_secret_name" {
+  description = "Secrets Manager container populated outside Terraform for API authentication."
+  value       = module.secrets.api_auth_secret_name
+}
+
 output "deployment_alarm_names" {
   description = "Alarm sets protecting production releases."
   value       = module.monitoring.deployment_alarm_names
@@ -36,6 +41,7 @@ output "production_safety_profile" {
     api_alternate_target_group = module.alb.blue_green_enabled
     deployment_config          = "CodeDeployDefault.ECSCanary10Percent5Minutes"
     blue_termination_wait      = var.blue_termination_wait_minutes
+    encrypted_api_auth         = module.secrets.kms_key_rotation_enabled
   }
 }
 
@@ -53,5 +59,6 @@ output "deployment_github_variables" {
     API_URL                          = "https://${module.alb.load_balancer_dns_name}"
     CODEDEPLOY_APPLICATION           = module.codedeploy.application_name
     CODEDEPLOY_DEPLOYMENT_GROUP      = module.codedeploy.deployment_group_name
+    API_AUTH_SECRET_ID               = module.secrets.api_auth_secret_name
   }
 }

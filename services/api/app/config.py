@@ -1,7 +1,8 @@
+import re
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +10,7 @@ class Settings(BaseSettings):
     """Application configuration loaded from environment variables or `.env`."""
 
     app_env: str = "local"
+    api_auth_token: SecretStr | None = Field(default=None, min_length=32, max_length=128)
     aws_region: str = "ap-southeast-2"
     llm_provider: Literal["local", "bedrock"] = "local"
     job_backend: Literal["memory", "aws"] = "memory"
@@ -39,7 +41,20 @@ class Settings(BaseSettings):
             raise ValueError(
                 "JOB_TABLE_NAME and INFERENCE_QUEUE_URL are required for JOB_BACKEND=aws"
             )
+        if self.app_env.lower() in {"dev", "staging", "production"} and self.api_auth_token is None:
+            raise ValueError("API_AUTH_TOKEN is required in deployed environments")
+        if self.api_auth_token is not None and not re.fullmatch(
+            r"[A-Za-z0-9_-]{32,128}", self.api_auth_token.get_secret_value()
+        ):
+            raise ValueError(
+                "API_AUTH_TOKEN must be 32-128 URL-safe alphanumeric, underscore, or hyphen characters"
+            )
         return self
+
+    def dependency_cache_json(self) -> str:
+        """Serialize service settings without authentication material."""
+
+        return self.model_dump_json(exclude={"api_auth_token", "app_env"})
 
 
 @lru_cache

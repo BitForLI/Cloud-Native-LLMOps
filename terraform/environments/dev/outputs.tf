@@ -71,6 +71,11 @@ output "github_deploy_role_arn" {
   value       = module.iam.github_deploy_role_arn
 }
 
+output "api_auth_secret_name" {
+  description = "Secrets Manager container populated outside Terraform for API authentication."
+  value       = module.secrets.api_auth_secret_name
+}
+
 output "api_url" {
   description = "Public API origin URL."
   value       = "${var.alb_certificate_arn == null ? "http" : "https"}://${module.alb.load_balancer_dns_name}"

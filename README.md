@@ -66,6 +66,21 @@ Alarm and recovery notifications use an SNS topic protected by a rotating
 customer-managed KMS key; optional email recipients must confirm their SNS
 subscriptions before alerts are delivered.
 
+### API authentication and secret handling
+
+`/v1/generate`, `/v1/jobs*`, and `/metrics` require `X-API-Key` whenever
+`API_AUTH_TOKEN` is configured. `/health` and `/ready` intentionally remain
+unauthenticated for ALB/ECS probes. Deployed `dev`, `staging`, and `production`
+processes fail configuration validation unless the token contains 32-128
+URL-safe characters.
+
+Terraform creates an empty Secrets Manager secret encrypted by an
+environment-specific customer-managed KMS key with automatic key rotation. It
+never manages a secret version, so plaintext does not enter Terraform state.
+ECS injects the current value at task startup. Staging and production release
+roles may read only that secret for authenticated integration/evaluation calls;
+GitHub masks the value immediately and does not store it as an Actions secret.
+
 ### Asynchronous inference
 
 Submit work with `POST /v1/jobs` and poll `GET /v1/jobs/{job_id}`. Jobs move

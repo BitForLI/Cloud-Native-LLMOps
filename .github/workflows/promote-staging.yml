@@ -39,6 +39,7 @@ jobs:
       API_ECS_SERVICE: ${{ vars.API_ECS_SERVICE }}
       WORKER_ECS_SERVICE: ${{ vars.WORKER_ECS_SERVICE }}
       API_URL: ${{ vars.API_URL }}
+      API_AUTH_SECRET_ID: ${{ vars.API_AUTH_SECRET_ID }}
       IMAGE_TAG: ${{ inputs.image_tag }}
 
     steps:

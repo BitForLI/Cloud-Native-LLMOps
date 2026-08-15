@@ -62,6 +62,10 @@ def test_promotion_reuses_digest_scans_and_rolls_back_both_services():
         '"${api_origin}/ready"',
         '"${api_origin}/v1/generate"',
         "python -m evals.run_remote_eval",
+        "secretsmanager get-secret-value",
+        "::add-mask::",
+        'X-API-Key: ${API_AUTH_TOKEN}',
+        'unauthenticated_status" == "401',
         '"${api_origin}/v1/jobs"',
         '"${api_origin}/v1/jobs/${job_id}"',
     ):
@@ -80,5 +84,6 @@ def test_promotion_configuration_is_complete():
         "API_ECS_SERVICE",
         "WORKER_ECS_SERVICE",
         "API_URL",
+        "API_AUTH_SECRET_ID",
         "IMAGE_TAG",
     }.issubset(environment)

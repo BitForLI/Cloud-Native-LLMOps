@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from app.auth import require_api_key
 from app.config import Settings, get_settings
 from app.job_service import JobService, get_job_service
 from app.logging import configure_logging
@@ -207,7 +208,7 @@ def ready(
     return {"status": "ready"}
 
 
-@app.get("/metrics")
+@app.get("/metrics", dependencies=[Depends(require_api_key)])
 def metrics_snapshot(
     metrics: Annotated[Metrics, Depends(get_metrics)],
 ) -> MetricsSnapshot:
@@ -216,6 +217,7 @@ def metrics_snapshot(
 
 @app.post(
     "/v1/generate",
+    dependencies=[Depends(require_api_key)],
     response_model=GenerateResponse,
     responses={
         502: {
@@ -276,6 +278,7 @@ def generate(
 
 @app.post(
     "/v1/jobs",
+    dependencies=[Depends(require_api_key)],
     response_model=JobResponse,
     status_code=status.HTTP_202_ACCEPTED,
     responses={
@@ -297,6 +300,7 @@ def create_job(
 
 @app.get(
     "/v1/jobs/{job_id}",
+    dependencies=[Depends(require_api_key)],
     response_model=JobResponse,
     responses={404: {"model": ErrorResponse, "description": "The job does not exist."}},
 )

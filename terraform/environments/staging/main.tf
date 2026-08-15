@@ -52,6 +52,15 @@ module "queue" {
   tags                       = local.common_tags
 }
 
+module "secrets" {
+  source = "../../modules/secrets"
+
+  name                        = local.name
+  kms_deletion_window_days    = 30
+  secret_recovery_window_days = 30
+  tags                        = local.common_tags
+}
+
 module "iam" {
   source = "../../modules/iam"
 
@@ -64,6 +73,10 @@ module "iam" {
   job_table_arn                        = module.database.job_table_arn
   inference_queue_arn                  = module.queue.queue_arn
   bedrock_model_ids                    = [var.bedrock_model_id]
+  secret_arns                          = [module.secrets.api_auth_secret_arn]
+  secret_kms_key_arns                  = [module.secrets.kms_key_arn]
+  github_verification_secret_arns      = [module.secrets.api_auth_secret_arn]
+  github_verification_kms_key_arns     = [module.secrets.kms_key_arn]
   github_oidc_provider_arn             = var.github_oidc_provider_arn
   github_oidc_subjects                 = var.github_oidc_subjects
   tags                                 = local.common_tags
@@ -98,6 +111,9 @@ module "ecs" {
   execution_role_arn    = module.iam.execution_role_arn
   api_task_role_arn     = module.iam.api_task_role_arn
   worker_task_role_arn  = module.iam.worker_task_role_arn
+  api_secrets = {
+    API_AUTH_TOKEN = module.secrets.api_auth_secret_arn
+  }
   bedrock_model_id      = var.bedrock_model_id
   artifact_bucket_name  = module.database.artifact_bucket_name
   job_table_name        = module.database.job_table_name
@@ -108,7 +124,7 @@ module "ecs" {
   log_retention_days    = var.log_retention_days
   tags                  = local.common_tags
 
-  depends_on = [module.networking, module.alb, module.iam, module.database, module.queue]
+  depends_on = [module.networking, module.alb, module.iam, module.database, module.queue, module.secrets]
 }
 
 module "monitoring" {

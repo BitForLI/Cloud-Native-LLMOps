@@ -24,7 +24,7 @@ def get_provider(
 ) -> LLMProvider:
     """Return a cached provider so boto3 clients are reused across requests."""
 
-    return _get_cached_provider(settings.model_dump_json())
+    return _get_cached_provider(settings.dependency_cache_json())
 
 
 @lru_cache(maxsize=8)

@@ -30,7 +30,8 @@ run "resilient_production_defaults" {
       output.production_safety_profile.log_retention_days >= 365 &&
       output.production_safety_profile.data_deletion_protection &&
       output.production_safety_profile.load_balancer_protection &&
-      output.production_safety_profile.api_alternate_target_group
+      output.production_safety_profile.api_alternate_target_group &&
+      output.production_safety_profile.encrypted_api_auth
     )
     error_message = "Production must preserve multi-AZ capacity, retention, deletion protection, and two target groups."
   }
@@ -51,6 +52,7 @@ run "resilient_production_defaults" {
   assert {
     condition = toset(keys(output.deployment_github_variables)) == toset([
       "API_ECS_SERVICE",
+      "API_AUTH_SECRET_ID",
       "API_URL",
       "AWS_ACCOUNT_ID",
       "AWS_DEPLOY_ROLE_ARN",
@@ -130,21 +132,27 @@ run "production_role_cannot_bypass_artifact_or_api_release" {
       "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/staging/api",
       "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/staging/worker",
     ]
-    promotion_only            = true
-    github_api_update_enabled = false
-    artifact_bucket_arn       = "arn:aws:s3:::llmops-production-artifacts"
-    job_table_arn             = "arn:aws:dynamodb:ap-southeast-2:123456789012:table/llmops-production-jobs"
-    inference_queue_arn       = "arn:aws:sqs:ap-southeast-2:123456789012:llmops-production-inference"
-    bedrock_model_ids         = ["test-model"]
-    github_oidc_provider_arn  = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
-    github_oidc_subjects      = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:environment:production"]
+    promotion_only                   = true
+    github_api_update_enabled        = false
+    artifact_bucket_arn              = "arn:aws:s3:::llmops-production-artifacts"
+    job_table_arn                    = "arn:aws:dynamodb:ap-southeast-2:123456789012:table/llmops-production-jobs"
+    inference_queue_arn              = "arn:aws:sqs:ap-southeast-2:123456789012:llmops-production-inference"
+    bedrock_model_ids                = ["test-model"]
+    secret_arns                      = ["arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:llmops-production/api-auth-token-AbCdEf"]
+    secret_kms_key_arns              = ["arn:aws:kms:ap-southeast-2:123456789012:key/00000000-0000-0000-0000-000000000000"]
+    github_verification_secret_arns  = ["arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:llmops-production/api-auth-token-AbCdEf"]
+    github_verification_kms_key_arns = ["arn:aws:kms:ap-southeast-2:123456789012:key/00000000-0000-0000-0000-000000000000"]
+    github_oidc_provider_arn         = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+    github_oidc_subjects             = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:environment:production"]
   }
 
   assert {
     condition = (
       one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "PushServiceImages"]).Action == ["ecr:PutImage"] &&
       length(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "UpdateDeploymentServices"]).Resource) == 1 &&
-      endswith(one(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "UpdateDeploymentServices"]).Resource), "-worker")
+      endswith(one(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "UpdateDeploymentServices"]).Resource), "-worker") &&
+      length([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "ReadReleaseVerificationSecret"]) == 1 &&
+      length([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "DecryptReleaseVerificationSecret"]) == 1
     )
     error_message = "Production automation may only copy manifests and directly update the Worker service."
   }
