@@ -18,6 +18,11 @@ output "load_balancer_zone_id" {
   value       = aws_lb.this.zone_id
 }
 
+output "deletion_protection_enabled" {
+  description = "Whether accidental ALB deletion is blocked."
+  value       = aws_lb.this.enable_deletion_protection
+}
+
 output "security_group_id" {
   description = "ALB security group accepted by the ECS task ingress rule."
   value       = aws_security_group.alb.id

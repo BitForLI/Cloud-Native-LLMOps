@@ -28,6 +28,20 @@ variable "worker_ecr_repository_arn" {
   }
 }
 
+variable "promotion_source_ecr_repository_arns" {
+  description = "Optional source repositories from which an environment may promote immutable images."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for arn in var.promotion_source_ecr_repository_arns :
+      can(regex("^arn:[^:]+:ecr:[^:]+:[0-9]{12}:repository/.+$", arn)) && !strcontains(arn, "*")
+    ])
+    error_message = "promotion_source_ecr_repository_arns must contain concrete ECR repository ARNs."
+  }
+}
+
 variable "artifact_bucket_arn" {
   description = "ARN of the S3 artifact bucket."
   type        = string

@@ -329,6 +329,11 @@ run "iam_separates_runtime_and_deployment_permissions" {
   }
 
   assert {
+    condition     = length([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "ReadPromotionSources"]) == 0
+    error_message = "Development must not receive cross-environment source repository access."
+  }
+
+  assert {
     condition = one(one(
       [for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "PassOnlyPlatformRoles"]
     ).Condition.StringEquals["iam:PassedToService"]) == "ecs-tasks.amazonaws.com"

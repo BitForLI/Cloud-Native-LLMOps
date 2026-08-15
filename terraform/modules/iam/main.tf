@@ -217,7 +217,7 @@ locals {
 
   github_deploy_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = [for statement in [
       {
         Sid      = "ECRAuthorization"
         Effect   = "Allow"
@@ -244,6 +244,16 @@ locals {
           "ecr:DescribeImageScanFindings",
         ]
         Resource = local.ecr_repository_arns
+      },
+      length(var.promotion_source_ecr_repository_arns) == 0 ? null : {
+        Sid    = "ReadPromotionSources"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchGetImage",
+          "ecr:DescribeImages",
+          "ecr:DescribeImageScanFindings",
+        ]
+        Resource = sort(tolist(var.promotion_source_ecr_repository_arns))
       },
       {
         Sid    = "RegisterTaskDefinitions"
@@ -282,7 +292,7 @@ locals {
           StringEquals = { "iam:PassedToService" = ["ecs-tasks.amazonaws.com"] }
         }
       },
-    ]
+    ] : statement if statement != null]
   })
 }
 

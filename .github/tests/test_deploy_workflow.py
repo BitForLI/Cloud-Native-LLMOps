@@ -25,6 +25,9 @@ def test_deploy_runs_only_after_successful_main_push_ci():
     assert "head_branch == 'master'" in job["if"]
     assert "vars.AWS_DEPLOY_ROLE_ARN != ''" in job["if"]
     assert workflow["concurrency"]["cancel-in-progress"] == "false"
+    assert workflow["run-name"] == (
+        "Deploy Development ${{ github.event.workflow_run.head_sha }}"
+    )
 
 
 def test_deploy_has_minimal_oidc_permissions_and_pinned_actions():

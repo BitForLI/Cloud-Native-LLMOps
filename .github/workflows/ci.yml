@@ -28,6 +28,10 @@ jobs:
 
   terraform:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, staging]
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v4
@@ -37,8 +41,8 @@ jobs:
       - name: Terraform format
         run: terraform fmt -check -recursive terraform
       - name: Terraform initialize
-        run: terraform -chdir=terraform/environments/dev init -backend=false -input=false -lockfile=readonly
+        run: terraform -chdir=terraform/environments/${{ matrix.environment }} init -backend=false -input=false -lockfile=readonly
       - name: Terraform validate
-        run: terraform -chdir=terraform/environments/dev validate
+        run: terraform -chdir=terraform/environments/${{ matrix.environment }} validate
       - name: Terraform module tests
-        run: terraform -chdir=terraform/environments/dev test
+        run: terraform -chdir=terraform/environments/${{ matrix.environment }} test

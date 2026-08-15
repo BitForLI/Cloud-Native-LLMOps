@@ -146,6 +146,27 @@ Configure the repository Actions variables listed by the Terraform
 GitHub; only the non-secret role ARN, account/region, resource names, and API
 origin are required.
 
+### Staging artifact promotion
+
+The protected `staging` GitHub environment accepts a manually selected full
+commit SHA only after confirming that SHA has a successful `master` CI run.
+It also requires a successful, non-skipped development deploy job for the same
+SHA, so staging cannot bypass the dev integration stage.
+`promote-staging.yml` does not rebuild containers: it copies the dev image
+manifests into immutable staging repositories and proves both destination
+digests equal their scanned dev sources.
+
+The promotion then rolls API and Worker together, verifies ECS did not silently
+roll back, exercises health/readiness and synchronous Bedrock inference, and
+submits and polls a durable SQS/DynamoDB Worker job. Any failed integration
+gate restores both prior staging task definitions. Terraform provisions
+staging with HTTPS, per-AZ NAT, redundant tasks, deletion protection, longer
+retention, alarms, and an OIDC role scoped to the `staging` environment and the
+two dev source repositories.
+
+The GitHub environment must require reviewers and restrict deployments to
+`master`; the workflow also rejects dispatches from other refs.
+
 ## Quality gate defaults
 
 - Exact-response evaluation score: `>= 0.90`

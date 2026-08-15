@@ -1,0 +1,7 @@
+[
+  {"id": "exact-aws", "prompt": "Reply with exactly AWS and nothing else.", "expected_output": "AWS"},
+  {"id": "exact-bedrock", "prompt": "Reply with exactly BEDROCK and nothing else.", "expected_output": "BEDROCK"},
+  {"id": "exact-fargate", "prompt": "Reply with exactly FARGATE and nothing else.", "expected_output": "FARGATE"},
+  {"id": "exact-terraform", "prompt": "Reply with exactly TERRAFORM and nothing else.", "expected_output": "TERRAFORM"},
+  {"id": "exact-llmops", "prompt": "Reply with exactly LLMOPS and nothing else.", "expected_output": "LLMOPS"}
+]

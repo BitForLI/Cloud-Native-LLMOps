@@ -36,6 +36,9 @@ terraform fmt -check -recursive terraform
 terraform -chdir=terraform/environments/dev init -backend=false -lockfile=readonly
 terraform -chdir=terraform/environments/dev validate
 terraform -chdir=terraform/environments/dev test
+terraform -chdir=terraform/environments/staging init -backend=false -lockfile=readonly
+terraform -chdir=terraform/environments/staging validate
+terraform -chdir=terraform/environments/staging test
 ```
 
 Copy `terraform.tfvars.example` when values must differ. Do not commit real
@@ -135,3 +138,10 @@ to request a short-lived OIDC session, pushes images tagged with the tested
 40-character commit SHA, and updates both ECS services. Terraform ignores only
 the services' live `task_definition` revision so the CD workflow remains the
 application-release owner; all other ECS configuration stays Terraform-owned.
+
+The staging root is deliberately stricter: it requires HTTPS, per-AZ NAT,
+redundant API and Worker tasks, protected data/load-balancer resources, and the
+existing account OIDC provider. Its deploy role trusts only the protected
+GitHub `staging` environment and can read only the two configured dev source
+repositories. Promotion copies the already-scanned ECR manifests by digest;
+it cannot substitute a rebuild.

@@ -17,3 +17,8 @@ output "job_table_name" {
   description = "Name of the DynamoDB job table."
   value       = aws_dynamodb_table.jobs.name
 }
+
+output "job_table_deletion_protection_enabled" {
+  description = "Whether DynamoDB deletion protection is active."
+  value       = aws_dynamodb_table.jobs.deletion_protection_enabled
+}
