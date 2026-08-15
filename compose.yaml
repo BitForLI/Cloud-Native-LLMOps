@@ -1,0 +1,12 @@
+services:
+  api:
+    build: ./services/api
+    environment:
+      APP_ENV: local
+    ports:
+      - "8000:8000"
+  worker:
+    build: ./services/worker
+    environment:
+      APP_ENV: local
+

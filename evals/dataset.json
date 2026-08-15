@@ -1,0 +1,5 @@
+[
+  {"prompt": "hello", "expected": "Received: hello"},
+  {"prompt": "AWS", "expected": "Received: AWS"}
+]
+
