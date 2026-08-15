@@ -49,3 +49,8 @@ def test_settings_read_environment_variables(monkeypatch):
 def test_settings_reject_invalid_bedrock_limits(field, value):
     with pytest.raises(ValidationError):
         Settings(**{field: value}, _env_file=None)
+
+
+def test_settings_reject_unknown_log_level():
+    with pytest.raises(ValidationError):
+        Settings(log_level="TRACE", _env_file=None)

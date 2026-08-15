@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     bedrock_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
     bedrock_connect_timeout_seconds: int = Field(default=5, ge=1, le=60)
     bedrock_read_timeout_seconds: int = Field(default=60, ge=1, le=300)
-    log_level: str = "INFO"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
     model_config = SettingsConfigDict(
         env_file=".env",

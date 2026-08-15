@@ -1,14 +1,18 @@
 import time
 from typing import Annotated
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
+from app.logging import configure_logging
+from app.middleware import request_context_middleware
 from app.providers.base import LLMProvider
 from app.providers.factory import get_provider
 
+configure_logging(get_settings().log_level)
 app = FastAPI(title="LLMOps Inference API", version="0.1.0")
+app.middleware("http")(request_context_middleware)
 
 
 class GenerateRequest(BaseModel):
@@ -34,11 +38,13 @@ def ready() -> dict[str, str]:
 
 @app.post("/v1/generate", response_model=GenerateResponse)
 def generate(
-    request: GenerateRequest,
+    payload: GenerateRequest,
+    request: Request,
     provider: Annotated[LLMProvider, Depends(get_provider)],
 ) -> GenerateResponse:
+    request.state.model_id = provider.model_id
     started = time.perf_counter()
-    output = provider.generate(request.prompt)
+    output = provider.generate(payload.prompt)
     latency_ms = round((time.perf_counter() - started) * 1000)
     return GenerateResponse(
         output=output,

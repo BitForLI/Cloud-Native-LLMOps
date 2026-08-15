@@ -40,6 +40,12 @@ ECS, credentials should come from the task role. The caller needs
 `bedrock:InvokeModel` permission and access to the selected model. Never place
 AWS access keys in `.env` or commit them to the repository.
 
+### Request observability
+
+Every HTTP response includes `X-Request-ID`. Application logs are JSON and
+record the request ID, method, route template, status, latency, selected model,
+and error type. Prompt and response content are deliberately excluded.
+
 ## Delivery model
 
 1. PR: format/lint, unit tests, evaluation quality gate, dependency security scan.
