@@ -1,8 +1,9 @@
 import time
-from os import getenv
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from pydantic import BaseModel, Field
+
+from app.config import Settings, get_settings
 
 app = FastAPI(title="LLMOps Inference API", version="0.1.0")
 
@@ -18,8 +19,8 @@ class GenerateResponse(BaseModel):
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "environment": getenv("APP_ENV", "local")}
+def health(settings: Settings = Depends(get_settings)) -> dict[str, str]:
+    return {"status": "ok", "environment": settings.app_env}
 
 
 @app.get("/ready")
@@ -29,11 +30,16 @@ def ready() -> dict[str, str]:
 
 
 @app.post("/v1/generate", response_model=GenerateResponse)
-def generate(request: GenerateRequest) -> GenerateResponse:
+def generate(
+    request: GenerateRequest,
+    settings: Settings = Depends(get_settings),
+) -> GenerateResponse:
     started = time.perf_counter()
-    model = getenv("BEDROCK_MODEL_ID", "local-deterministic-stub")
     # A deterministic stub enables safe CI evaluation. Replace with a Bedrock adapter.
     output = f"Received: {request.prompt.strip()}"
     latency_ms = round((time.perf_counter() - started) * 1000)
-    return GenerateResponse(output=output, model=model, latency_ms=latency_ms)
-
+    return GenerateResponse(
+        output=output,
+        model=settings.bedrock_model_id,
+        latency_ms=latency_ms,
+    )

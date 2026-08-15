@@ -22,6 +22,7 @@ GitHub PR -> lint / pytest / LLM evaluation / security scan
 ## Local start
 
 ```bash
+cp .env.example .env
 docker compose up --build
 # http://localhost:8000/health
 ```
@@ -40,4 +41,3 @@ The API uses a deterministic local response unless `BEDROCK_MODEL_ID` is configu
 - Exact-response evaluation score: `>= 0.90`
 - Tool success rate: `>= 0.95` (to be added with tool calling)
 - P95 latency and cost thresholds: enforced once telemetry is wired into the evaluator
-
