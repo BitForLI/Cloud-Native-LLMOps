@@ -9,6 +9,10 @@ Application Auto Scaling preserves the two-task availability floor while
 allowing API capacity to reach six tasks and Worker capacity to reach ten. The
 Worker targets two visible SQS inference jobs per running task.
 
+The public ALB is unconditionally associated with AWS WAF. Per-IP throttling
+and three AWS-managed threat rule groups block abusive traffic; redacted logs
+retain blocked requests for 90 days.
+
 Copy the examples, replace account-specific values, then initialize and apply:
 
 ```bash

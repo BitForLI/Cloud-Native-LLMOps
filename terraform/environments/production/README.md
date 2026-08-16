@@ -8,6 +8,10 @@ Application Auto Scaling retains the three-task API and two-task Worker
 baselines, with hard ceilings of 12 and 30 tasks. API capacity follows CPU and
 memory; Worker capacity follows SQS backlog per running task.
 
+The public ALB is unconditionally protected by AWS WAF with a 5,000-request
+five-minute per-IP ceiling and AWS-managed reputation, known-input, and common
+threat rules. Blocked traffic is redacted, retained for 365 days, and alarmed.
+
 Copy the tfvars and backend examples, replace account-specific values, and use
 a two-phase bootstrap: first target both ECR modules and `module.secrets`,
 populate `api_auth_secret_name` with a random 32-128 character URL-safe value,

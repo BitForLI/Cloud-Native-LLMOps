@@ -56,6 +56,24 @@ variable "monitor_alternate_target_group" {
   default     = false
 }
 
+variable "waf_enabled" {
+  description = "Include regional WAF blocked traffic in the operations dashboard."
+  type        = bool
+  default     = false
+}
+
+variable "waf_web_acl_metric_name" {
+  description = "WebACL CloudWatch dimension configured by WAF visibility settings."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.waf_web_acl_metric_name == null || can(regex("^[A-Za-z0-9]+$", var.waf_web_acl_metric_name))
+    error_message = "waf_web_acl_metric_name must be null or alphanumeric."
+  }
+}
+
 variable "queue_name" {
   description = "Inference queue CloudWatch dimension value."
   type        = string

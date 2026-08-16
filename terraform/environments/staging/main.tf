@@ -157,6 +157,8 @@ module "monitoring" {
   worker_service_name                    = module.ecs.worker_service_name
   load_balancer_arn_suffix               = module.alb.load_balancer_arn_suffix
   target_group_arn_suffix                = module.alb.api_target_group_arn_suffix
+  waf_enabled                            = true
+  waf_web_acl_metric_name                = "${replace(local.name, "-", "")}WebAcl"
   queue_name                             = module.queue.queue_name
   dead_letter_queue_name                 = module.queue.dead_letter_queue_name
   api_log_group_name                     = module.ecs.api_log_group_name
@@ -168,4 +170,17 @@ module "monitoring" {
   queue_age_threshold_seconds            = var.alarm_queue_age_threshold_seconds
   resource_utilization_threshold_percent = var.alarm_resource_utilization_threshold_percent
   tags                                   = local.common_tags
+}
+
+module "waf" {
+  source = "../../modules/waf"
+
+  name                            = local.name
+  aws_region                      = var.aws_region
+  alb_arn                         = module.alb.load_balancer_arn
+  rate_limit_per_five_minutes     = var.waf_rate_limit_per_five_minutes
+  blocked_request_alarm_threshold = var.waf_blocked_request_alarm_threshold
+  alarm_topic_arn                 = module.monitoring.alarm_topic_arn
+  log_retention_days              = var.log_retention_days
+  tags                            = local.common_tags
 }

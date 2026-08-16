@@ -119,7 +119,17 @@ output "alarm_topic_arn" {
 
 output "cloudwatch_alarm_names" {
   description = "CloudWatch alarms protecting the development platform."
-  value       = module.monitoring.alarm_names
+  value       = compact(concat(module.monitoring.alarm_names, [module.waf.blocked_request_alarm_name]))
+}
+
+output "waf_security_boundary" {
+  description = "Optional development WAF association, logging, and rate limit settings."
+  value = {
+    enabled                     = module.waf.enabled
+    web_acl_arn                 = module.waf.web_acl_arn
+    blocked_request_log_group   = module.waf.log_group_name
+    rate_limit_per_five_minutes = module.waf.rate_limit_per_five_minutes
+  }
 }
 
 output "deployment_github_variables" {

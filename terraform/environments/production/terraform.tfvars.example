@@ -20,5 +20,7 @@ worker_max_capacity          = 30
 worker_backlog_target_per_task = 2
 log_retention_days           = 365
 otel_trace_sample_ratio      = 0.1
+waf_rate_limit_per_five_minutes = 5000
+waf_blocked_request_alarm_threshold = 250
 blue_termination_wait_minutes = 10
 alarm_notification_emails    = ["platform@example.com"]

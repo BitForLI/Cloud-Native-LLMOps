@@ -50,6 +50,11 @@ output "staging_safety_profile" {
     adot_collector_image     = module.ecs.adot_collector_image
     autoscaling_bounds       = module.autoscaling.capacity_bounds
     worker_backlog_target    = module.autoscaling.worker_backlog_target_per_task
+    waf_enabled              = module.waf.enabled
+    waf_web_acl_arn          = module.waf.web_acl_arn
+    waf_log_group            = module.waf.log_group_name
+    waf_rate_limit           = module.waf.rate_limit_per_five_minutes
+    waf_alarm_name           = module.waf.blocked_request_alarm_name
   }
 }
 

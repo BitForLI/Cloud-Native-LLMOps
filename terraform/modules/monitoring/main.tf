@@ -423,10 +423,15 @@ resource "aws_cloudwatch_dashboard" "this" {
         type = "metric", x = 0, y = 0, width = 12, height = 6
         properties = {
           title = "API traffic and target errors", region = var.aws_region, view = "timeSeries", period = 60
-          metrics = [
-            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", var.load_balancer_arn_suffix, "TargetGroup", var.target_group_arn_suffix, { stat = "Sum" }],
-            [".", "HTTPCode_Target_5XX_Count", ".", ".", ".", ".", { stat = "Sum" }],
-          ]
+          metrics = concat(
+            [
+              ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", var.load_balancer_arn_suffix, "TargetGroup", var.target_group_arn_suffix, { stat = "Sum" }],
+              [".", "HTTPCode_Target_5XX_Count", ".", ".", ".", ".", { stat = "Sum" }],
+            ],
+            var.waf_enabled ? [
+              ["AWS/WAFV2", "BlockedRequests", "Region", var.aws_region, "Rule", "ALL", "WebACL", var.waf_web_acl_metric_name, { stat = "Sum", label = "WAF blocked" }],
+            ] : []
+          )
         }
       },
       {
@@ -493,4 +498,11 @@ resource "aws_cloudwatch_dashboard" "this" {
       },
     ]
   })
+
+  lifecycle {
+    precondition {
+      condition     = !var.waf_enabled || var.waf_web_acl_metric_name != null
+      error_message = "waf_web_acl_metric_name is required when waf_enabled is true."
+    }
+  }
 }

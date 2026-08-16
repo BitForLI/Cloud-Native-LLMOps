@@ -4,6 +4,18 @@ mock_provider "aws" {
       arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:mock-api-auth-AbCdEf"
     }
   }
+
+  mock_resource "aws_wafv2_web_acl" {
+    defaults = {
+      arn = "arn:aws:wafv2:ap-southeast-2:123456789012:regional/webacl/mock/00000000-0000-0000-0000-000000000000"
+    }
+  }
+
+  mock_resource "aws_cloudwatch_log_group" {
+    defaults = {
+      arn = "arn:aws:logs:ap-southeast-2:123456789012:log-group:aws-waf-logs-mock"
+    }
+  }
 }
 
 run "single_nat_development_topology" {
@@ -736,6 +748,8 @@ run "monitoring_covers_platform_and_llm_failure_modes" {
     api_log_group_name           = "/ecs/llmops/api"
     worker_log_group_name        = "/ecs/llmops/worker"
     bedrock_model_id             = "anthropic.test-model"
+    waf_enabled                  = true
+    waf_web_acl_metric_name      = "llmopsWebAcl"
     notification_emails          = ["platform@example.com"]
     error_rate_threshold_percent = 5
   }
@@ -801,7 +815,9 @@ run "monitoring_covers_platform_and_llm_failure_modes" {
     condition = (
       length(jsondecode(aws_cloudwatch_dashboard.this.dashboard_body).widgets) == 6 &&
       strcontains(aws_cloudwatch_dashboard.this.dashboard_body, "RunningTaskCount") &&
-      strcontains(aws_cloudwatch_dashboard.this.dashboard_body, "DesiredTaskCount")
+      strcontains(aws_cloudwatch_dashboard.this.dashboard_body, "DesiredTaskCount") &&
+      strcontains(aws_cloudwatch_dashboard.this.dashboard_body, "BlockedRequests") &&
+      strcontains(aws_cloudwatch_dashboard.this.dashboard_body, "llmopsWebAcl")
     )
     error_message = "The operations dashboard must contain all six signal groups and live scaling capacity."
   }
@@ -936,4 +952,105 @@ run "autoscaling_rejects_capacity_ceiling_below_floor" {
     aws_appautoscaling_target.api,
     aws_appautoscaling_target.worker,
   ]
+}
+
+run "waf_blocks_managed_threats_and_redacts_security_logs" {
+  command = apply
+
+  module {
+    source = "../../modules/waf"
+  }
+
+  variables {
+    name                            = "llmops-test"
+    aws_region                      = "ap-southeast-2"
+    alb_arn                         = "arn:aws:elasticloadbalancing:ap-southeast-2:123456789012:loadbalancer/app/llmops-test/id"
+    rate_limit_per_five_minutes     = 750
+    blocked_request_alarm_threshold = 25
+    alarm_topic_arn                 = "arn:aws:sns:ap-southeast-2:123456789012:llmops-alerts"
+  }
+
+  assert {
+    condition = (
+      aws_wafv2_web_acl.this["this"].scope == "REGIONAL" &&
+      aws_wafv2_web_acl_association.alb["this"].resource_arn == var.alb_arn &&
+      aws_wafv2_web_acl_association.alb["this"].web_acl_arn == aws_wafv2_web_acl.this["this"].arn &&
+      length(aws_wafv2_web_acl.this["this"].rule) == 4 &&
+      !one(aws_wafv2_web_acl.this["this"].visibility_config).sampled_requests_enabled
+    )
+    error_message = "A regional four-rule Web ACL must protect the ALB without request sampling."
+  }
+
+  assert {
+    condition = (
+      one(one(one([for rule in aws_wafv2_web_acl.this["this"].rule : rule if rule.name == "RateLimitPerSourceIp"]).statement).rate_based_statement).limit == 750 &&
+      one(one(one([for rule in aws_wafv2_web_acl.this["this"].rule : rule if rule.name == "RateLimitPerSourceIp"]).statement).rate_based_statement).evaluation_window_sec == 300 &&
+      toset(flatten([
+        for rule in aws_wafv2_web_acl.this["this"].rule : [
+          for statement in rule.statement : [
+            for managed in statement.managed_rule_group_statement : managed.name
+          ]
+        ]
+        ])) == toset([
+        "AWSManagedRulesAmazonIpReputationList",
+        "AWSManagedRulesKnownBadInputsRuleSet",
+        "AWSManagedRulesCommonRuleSet",
+      ])
+    )
+    error_message = "WAF must combine per-IP throttling with the three required AWS managed rule groups."
+  }
+
+  assert {
+    condition = (
+      startswith(aws_cloudwatch_log_group.waf["this"].name, "aws-waf-logs-") &&
+      strcontains(aws_cloudwatch_log_resource_policy.waf["this"].policy_document, "delivery.logs.amazonaws.com") &&
+      strcontains(aws_cloudwatch_log_resource_policy.waf["this"].policy_document, aws_cloudwatch_log_group.waf["this"].arn) &&
+      one(aws_wafv2_web_acl_logging_configuration.this["this"].logging_filter).default_behavior == "DROP" &&
+      one(one(aws_wafv2_web_acl_logging_configuration.this["this"].logging_filter).filter).behavior == "KEEP" &&
+      one(one(one(aws_wafv2_web_acl_logging_configuration.this["this"].logging_filter).filter).condition).action_condition[0].action == "BLOCK" &&
+      length(aws_wafv2_web_acl_logging_configuration.this["this"].redacted_fields) == 3 &&
+      toset(flatten([
+        for field in aws_wafv2_web_acl_logging_configuration.this["this"].redacted_fields : [
+          for header in field.single_header : header.name
+        ]
+      ])) == toset(["authorization", "x-api-key"])
+    )
+    error_message = "WAF logging must keep blocked traffic only and redact authentication material."
+  }
+
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.blocked_requests["this"].namespace == "AWS/WAFV2" &&
+      aws_cloudwatch_metric_alarm.blocked_requests["this"].threshold == 25 &&
+      toset(aws_cloudwatch_metric_alarm.blocked_requests["this"].alarm_actions) == toset([var.alarm_topic_arn]) &&
+      aws_cloudwatch_metric_alarm.blocked_requests["this"].treat_missing_data == "notBreaching"
+    )
+    error_message = "Abnormal WAF blocking volume must notify the existing SNS alarm path."
+  }
+}
+
+run "development_can_disable_paid_waf_boundary" {
+  command = plan
+
+  module {
+    source = "../../modules/waf"
+  }
+
+  variables {
+    enabled    = false
+    name       = "llmops-test"
+    aws_region = "ap-southeast-2"
+    alb_arn    = "arn:aws:elasticloadbalancing:ap-southeast-2:123456789012:loadbalancer/app/llmops-test/id"
+  }
+
+  assert {
+    condition = (
+      length(aws_wafv2_web_acl.this) == 0 &&
+      length(aws_wafv2_web_acl_association.alb) == 0 &&
+      length(aws_wafv2_web_acl_logging_configuration.this) == 0 &&
+      length(aws_cloudwatch_log_resource_policy.waf) == 0 &&
+      length(aws_cloudwatch_metric_alarm.blocked_requests) == 0
+    )
+    error_message = "Disabling development WAF must remove the complete paid boundary."
+  }
 }

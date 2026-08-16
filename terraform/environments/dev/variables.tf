@@ -229,6 +229,34 @@ variable "otel_trace_sample_ratio" {
   }
 }
 
+variable "enable_waf" {
+  description = "Enable the paid regional WAF boundary in development."
+  type        = bool
+  default     = false
+}
+
+variable "waf_rate_limit_per_five_minutes" {
+  description = "Development WAF request ceiling per source IP over five minutes."
+  type        = number
+  default     = 1000
+
+  validation {
+    condition     = var.waf_rate_limit_per_five_minutes >= 100 && var.waf_rate_limit_per_five_minutes <= 1000000 && floor(var.waf_rate_limit_per_five_minutes) == var.waf_rate_limit_per_five_minutes
+    error_message = "waf_rate_limit_per_five_minutes must be an integer between 100 and 1000000."
+  }
+}
+
+variable "waf_blocked_request_alarm_threshold" {
+  description = "Blocked development requests in five minutes that trigger an alarm."
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.waf_blocked_request_alarm_threshold >= 1 && floor(var.waf_blocked_request_alarm_threshold) == var.waf_blocked_request_alarm_threshold
+    error_message = "waf_blocked_request_alarm_threshold must be a positive integer."
+  }
+}
+
 variable "alarm_notification_emails" {
   description = "Email addresses that confirm and receive CloudWatch alarm notifications."
   type        = set(string)

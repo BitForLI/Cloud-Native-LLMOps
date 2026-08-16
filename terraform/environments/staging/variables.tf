@@ -257,6 +257,28 @@ variable "otel_trace_sample_ratio" {
   }
 }
 
+variable "waf_rate_limit_per_five_minutes" {
+  description = "Staging WAF request ceiling per source IP over five minutes."
+  type        = number
+  default     = 1000
+
+  validation {
+    condition     = var.waf_rate_limit_per_five_minutes >= 100 && var.waf_rate_limit_per_five_minutes <= 1000000 && floor(var.waf_rate_limit_per_five_minutes) == var.waf_rate_limit_per_five_minutes
+    error_message = "waf_rate_limit_per_five_minutes must be an integer between 100 and 1000000."
+  }
+}
+
+variable "waf_blocked_request_alarm_threshold" {
+  description = "Blocked staging requests in five minutes that trigger an alarm."
+  type        = number
+  default     = 50
+
+  validation {
+    condition     = var.waf_blocked_request_alarm_threshold >= 1 && floor(var.waf_blocked_request_alarm_threshold) == var.waf_blocked_request_alarm_threshold
+    error_message = "waf_blocked_request_alarm_threshold must be a positive integer."
+  }
+}
+
 variable "alarm_notification_emails" {
   description = "Addresses that receive staging alarm transitions."
   type        = set(string)

@@ -1,4 +1,16 @@
-mock_provider "aws" {}
+mock_provider "aws" {
+  mock_resource "aws_wafv2_web_acl" {
+    defaults = {
+      arn = "arn:aws:wafv2:ap-southeast-2:123456789012:regional/webacl/mock/00000000-0000-0000-0000-000000000000"
+    }
+  }
+
+  mock_resource "aws_cloudwatch_log_group" {
+    defaults = {
+      arn = "arn:aws:logs:ap-southeast-2:123456789012:log-group:aws-waf-logs-mock"
+    }
+  }
+}
 
 variables {
   availability_zones       = ["ap-southeast-2a", "ap-southeast-2b"]
@@ -54,7 +66,11 @@ run "production_like_staging_defaults" {
       output.staging_safety_profile.autoscaling_bounds.api.max == 6 &&
       output.staging_safety_profile.autoscaling_bounds.worker.min == 2 &&
       output.staging_safety_profile.autoscaling_bounds.worker.max == 10 &&
-      output.staging_safety_profile.worker_backlog_target == 2
+      output.staging_safety_profile.worker_backlog_target == 2 &&
+      output.staging_safety_profile.waf_enabled &&
+      startswith(output.staging_safety_profile.waf_log_group, "aws-waf-logs-") &&
+      output.staging_safety_profile.waf_rate_limit == 1000 &&
+      output.staging_safety_profile.waf_alarm_name != null
     )
     error_message = "Staging safety controls must remain production-like."
   }

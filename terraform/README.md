@@ -24,6 +24,7 @@ creates the foundation needed by later ECS work:
 - an empty Secrets Manager API-token container encrypted by a rotating customer KMS key.
 - a pinned ADOT Collector sidecar per task exporting OTLP traces to AWS X-Ray.
 - ECS Application Auto Scaling with bounded API utilization and Worker queue-pressure policies.
+- regional AWS WAF managed rules, per-IP throttling, redacted blocked-request logs, and alarms.
 
 The dev default uses one NAT gateway to control cost. Production should use
 `per_az` for zone-independent egress. NAT gateways incur hourly and data
@@ -167,6 +168,20 @@ environment supplies a non-zero availability floor and a hard task ceiling.
 Scale-out waits 60 seconds; scale-in waits 300 seconds to avoid rapid churn.
 The ECS service lifecycle ignores autoscaler-owned `desired_count` drift while
 Terraform retains ownership of the capacity limits and scaling policies.
+
+## Public API WAF boundary
+
+The `waf` module associates a regional Web ACL directly with the public ALB.
+Its custom rule blocks excessive traffic from a single source IP over a
+five-minute window. AWS-managed IP reputation, known-bad-input, and common-rule
+groups inspect the remaining traffic. Staging and production always instantiate
+this boundary; development can disable it to avoid fixed WAF charges.
+
+Sampled requests are disabled. WAF logging drops allowed requests, retains
+blocked requests, and redacts the API key, authorization header, and query
+string. The log group is retained per environment and uses the mandatory
+`aws-waf-logs-` prefix. A blocked-request volume alarm publishes alarm and
+recovery events to the platform's encrypted SNS topic.
 
 ## GitHub deployment variables
 

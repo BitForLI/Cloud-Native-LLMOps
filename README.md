@@ -6,7 +6,7 @@ Production-oriented LLM service platform: automated quality gates, container del
 
 ```text
 GitHub PR -> lint / pytest / LLM evaluation / security scan
-   -> main -> Docker build -> Amazon ECR -> ECS Fargate -> Bedrock
+   -> main -> Docker build -> Amazon ECR -> AWS WAF / ALB -> ECS Fargate -> Bedrock
                                              |       |       |
                                       CloudWatch/X-Ray  S3  DynamoDB
                                              |
@@ -97,6 +97,19 @@ is capped at 3 API/5 Worker tasks, staging at 6/10, and production at 12/30.
 ECS desired counts are availability baselines and Terraform ignores subsequent
 changes owned by the autoscaler.
 
+### Public API edge security
+
+Staging and production ALBs are always associated with a regional AWS WAF Web
+ACL. It blocks per-IP request floods and evaluates AWS-managed IP reputation,
+known-bad-input, and common-threat rule groups before traffic reaches FastAPI.
+Development leaves WAF disabled by default to avoid its fixed cost, but uses the
+same module when `enable_waf=true`.
+
+WAF request sampling is disabled. Logging keeps blocked requests only and
+redacts `Authorization`, `X-API-Key`, and query strings before sending records
+to the required `aws-waf-logs-*` CloudWatch group. Abnormal blocking volume
+raises a CloudWatch alarm through the existing encrypted SNS notification path.
+
 ### API authentication and secret handling
 
 `/v1/generate`, `/v1/jobs*`, and `/metrics` require `X-API-Key` whenever
@@ -157,7 +170,7 @@ required. API and Worker task roles grant their local collectors only the two
 X-Ray write actions required to publish segments and telemetry records.
 
 ECS Fargate runs the API and Worker in private subnets without public IPs. The
-public ALB reaches only API port `8000`; task definitions enforce non-root users,
+WAF-protected public ALB reaches only API port `8000`; task definitions enforce non-root users,
 read-only roots, writable Fargate-ephemeral `/tmp` mounts, container health checks, and
 separate runtime roles. Failed rolling deployments trigger the ECS deployment
 circuit breaker and automatic rollback.
