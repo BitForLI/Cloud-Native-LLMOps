@@ -61,6 +61,11 @@ output "production_safety_profile" {
     audit_log_group            = module.audit.log_group_name
     audit_validation_enabled   = module.audit.log_file_validation_enabled
     security_alarm_names       = module.audit.security_alarm_names
+    backup_vault_name          = module.backup.vault_name
+    backup_plan_name           = module.backup.plan_name
+    backup_retention_days      = module.backup.retention_days
+    protected_resource_arns    = module.backup.protected_resource_arns
+    restore_testing_plan_name  = module.backup.restore_testing_plan_name
   }
 }
 

@@ -363,3 +363,36 @@ variable "audit_archive_retention_days" {
     error_message = "audit_archive_retention_days must be an integer of at least 365 days."
   }
 }
+
+variable "backup_daily_retention_days" {
+  description = "Retention for daily S3 and DynamoDB recovery points."
+  type        = number
+  default     = 35
+
+  validation {
+    condition     = var.backup_daily_retention_days >= 35 && floor(var.backup_daily_retention_days) == var.backup_daily_retention_days
+    error_message = "backup_daily_retention_days must be an integer of at least 35 days."
+  }
+}
+
+variable "backup_weekly_retention_days" {
+  description = "Retention for weekly S3 and DynamoDB recovery points."
+  type        = number
+  default     = 365
+
+  validation {
+    condition     = var.backup_weekly_retention_days >= 365 && var.backup_weekly_retention_days >= var.backup_daily_retention_days && var.backup_weekly_retention_days <= 3650 && floor(var.backup_weekly_retention_days) == var.backup_weekly_retention_days
+    error_message = "backup_weekly_retention_days must be an integer from 365 through 3650 and no shorter than daily retention."
+  }
+}
+
+variable "backup_restore_testing_enabled" {
+  description = "Production invariant requiring monthly automated S3 and DynamoDB restore tests."
+  type        = bool
+  default     = true
+
+  validation {
+    condition     = var.backup_restore_testing_enabled
+    error_message = "Production automated restore testing cannot be disabled."
+  }
+}

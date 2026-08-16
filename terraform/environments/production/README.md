@@ -38,6 +38,23 @@ values in `production_safety_profile` as operational inventory. The archive
 bucket uses `force_destroy = false`; remove retained evidence explicitly only
 through an approved decommissioning process.
 
+AWS Backup adds an independently encrypted, governance-locked recovery vault.
+Daily snapshots are retained for at least 35 days and weekly snapshots for at
+least 365 days. The selection contains only the production artifact bucket and
+job table; their existing S3 versioning and DynamoDB point-in-time recovery
+remain the first line of defense for short-range recovery.
+
+The monthly restore-testing plan restores the latest eligible S3 and DynamoDB
+snapshots through a dedicated restore role, with a one-hour validation window.
+Inspect its results in AWS Backup restore testing and alert operational owners
+on any failed validation. AWS Backup removes test resources after the window,
+although S3 cleanup can remain in progress; verify cleanup and charges after
+every drill. Neither backup service role is a deployment role.
+
+Before changing retention, confirm `daily <= weekly <= vault maximum`. The
+vault uses governance mode by design; switching to irreversible compliance
+mode requires a separately reviewed retention and decommissioning decision.
+
 Put the output values plus `STAGING_API_ECR_REPOSITORY` and
 `STAGING_WORKER_ECR_REPOSITORY` in the protected GitHub `production`
 environment. Require reviewers, prevent self-review, enforce deployment from

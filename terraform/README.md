@@ -25,6 +25,8 @@ creates the foundation needed by later ECS work:
 - a pinned ADOT Collector sidecar per task exporting OTLP traces to AWS X-Ray.
 - ECS Application Auto Scaling with bounded API utilization and Worker queue-pressure policies.
 - regional AWS WAF managed rules, per-IP throttling, redacted blocked-request logs, and alarms.
+- a customer-KMS-encrypted AWS Backup vault with governance retention lock;
+- daily/weekly S3 and DynamoDB snapshots plus monthly automated restore tests.
 
 The dev default uses one NAT gateway to control cost. Production should use
 `per_az` for zone-independent egress. NAT gateways incur hourly and data
@@ -236,3 +238,20 @@ delivery. CloudTrail can write only the exact account prefix and trail ARN;
 its CloudWatch role can create streams and publish events only in the audit log
 group. Four metric filters reuse the encrypted operations topic for security
 detections.
+
+## Backup and recovery validation
+
+Production composes the `backup` module around the exact artifact-bucket and
+job-table ARNs. It keeps daily snapshots for 35 days and weekly snapshots for
+365 days in a rotating customer-key-encrypted vault. A governance-mode vault
+lock prevents recovery points from being shortened below the daily policy or
+extended beyond the configured maximum while retaining an authorized
+decommissioning path.
+
+The backup execution role and restore-test role trust only AWS Backup and have
+no ECR, ECS, CodeDeploy, or GitHub trust relationship. The monthly recovery
+test selects the latest snapshot in the daily window and restores both S3 and
+DynamoDB with a one-hour validation window. Treat the AWS Backup restore-test
+history as the recovery drill record; investigate failures and confirm that
+temporary S3 resources finish cleanup. Both retained recovery points and
+restore drills incur service charges.

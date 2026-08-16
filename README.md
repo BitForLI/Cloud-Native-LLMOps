@@ -99,6 +99,19 @@ changes that stop, delete, or reconfigure the trail. Broad Bedrock and S3 data
 events are intentionally excluded: this audit layer records the control plane
 without copying prompts or other application payloads into security logs.
 
+### Backup and recovery drills
+
+Production combines S3 versioning and DynamoDB PITR with scheduled AWS Backup
+recovery points. A dedicated customer-key-encrypted vault retains daily
+snapshots for 35 days and weekly snapshots for one year under governance
+retention lock. Only the artifact bucket and job table are selected, and AWS
+Backup roles are isolated from deployment identities.
+
+A monthly restore-testing plan restores the latest eligible S3 and DynamoDB
+snapshots through a separate restore role. Its one-hour validation window is a
+repeatable recovery-drill entry point; operations must review failed tests and
+verify completion of temporary-resource cleanup.
+
 OpenTelemetry instruments FastAPI and botocore calls. API and Worker task
 definitions each include an essential, version-pinned AWS Distro for
 OpenTelemetry Collector sidecar. Applications send OTLP/gRPC only to

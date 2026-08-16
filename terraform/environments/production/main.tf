@@ -42,6 +42,20 @@ module "database" {
   tags                                    = local.common_tags
 }
 
+module "backup" {
+  source = "../../modules/backup"
+
+  name                    = local.name
+  artifact_bucket_arn     = module.database.artifact_bucket_arn
+  job_table_arn           = module.database.job_table_arn
+  daily_retention_days    = var.backup_daily_retention_days
+  weekly_retention_days   = var.backup_weekly_retention_days
+  restore_testing_enabled = var.backup_restore_testing_enabled
+  tags                    = local.common_tags
+
+  depends_on = [module.database]
+}
+
 module "queue" {
   source = "../../modules/queue"
 

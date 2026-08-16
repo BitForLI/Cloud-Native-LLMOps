@@ -64,7 +64,12 @@ run "resilient_production_defaults" {
       output.production_safety_profile.audit_trail_name == "cloud-native-llmops-prod-management" &&
       output.production_safety_profile.audit_log_group == "/aws/cloudtrail/cloud-native-llmops-prod" &&
       output.production_safety_profile.audit_validation_enabled &&
-      length(output.production_safety_profile.security_alarm_names) == 4
+      length(output.production_safety_profile.security_alarm_names) == 4 &&
+      output.production_safety_profile.backup_vault_name == "cloud-native-llmops-prod-recovery" &&
+      output.production_safety_profile.backup_plan_name == "cloud-native-llmops-prod-data-protection" &&
+      output.production_safety_profile.backup_retention_days.daily == 35 &&
+      output.production_safety_profile.backup_retention_days.weekly == 365 &&
+      output.production_safety_profile.restore_testing_plan_name == "cloud_native_llmops_prod_monthly_restore"
     )
     error_message = "Production must preserve multi-AZ capacity, retention, deletion protection, and two target groups."
   }
@@ -100,6 +105,110 @@ run "resilient_production_defaults" {
       "WORKER_ECS_SERVICE",
     ])
     error_message = "Production must expose the complete non-secret release configuration."
+  }
+}
+
+run "backups_are_locked_scoped_and_restore_tested" {
+  command = apply
+
+  module { source = "../../modules/backup" }
+
+  override_data {
+    target = data.aws_partition.current
+    values = { partition = "aws" }
+  }
+
+  override_data {
+    target = data.aws_caller_identity.current
+    values = { account_id = "123456789012" }
+  }
+
+  override_resource {
+    target = aws_kms_key.backup
+    values = {
+      arn    = "arn:aws:kms:ap-southeast-2:123456789012:key/00000000-0000-0000-0000-000000000000"
+      key_id = "00000000-0000-0000-0000-000000000000"
+    }
+  }
+
+  override_resource {
+    target = aws_backup_vault.this
+    values = {
+      arn  = "arn:aws:backup:ap-southeast-2:123456789012:backup-vault:llmops-production-recovery"
+      name = "llmops-production-recovery"
+    }
+  }
+
+  variables {
+    name                = "llmops-production"
+    artifact_bucket_arn = "arn:aws:s3:::llmops-production-artifacts"
+    job_table_arn       = "arn:aws:dynamodb:ap-southeast-2:123456789012:table/llmops-production-jobs"
+  }
+
+  assert {
+    condition = (
+      aws_kms_key.backup.enable_key_rotation &&
+      aws_kms_key.backup.deletion_window_in_days == 30 &&
+      aws_backup_vault.this.kms_key_arn == aws_kms_key.backup.arn &&
+      !aws_backup_vault.this.force_destroy &&
+      aws_backup_vault_lock_configuration.this.min_retention_days == 35 &&
+      aws_backup_vault_lock_configuration.this.max_retention_days == 3650 &&
+      aws_backup_vault_lock_configuration.this.changeable_for_days == null
+    )
+    error_message = "Recovery points must use a rotating customer key and a governance-mode retention lock."
+  }
+
+  assert {
+    condition = (
+      length(aws_backup_plan.this.rule) == 2 &&
+      one([for rule in aws_backup_plan.this.rule : rule if rule.rule_name == "daily"]).schedule == "cron(0 5 ? * * *)" &&
+      one([for rule in aws_backup_plan.this.rule : rule if rule.rule_name == "daily"]).lifecycle[0].delete_after == 35 &&
+      one([for rule in aws_backup_plan.this.rule : rule if rule.rule_name == "weekly"]).schedule == "cron(0 6 ? * SUN *)" &&
+      one([for rule in aws_backup_plan.this.rule : rule if rule.rule_name == "weekly"]).lifecycle[0].delete_after == 365 &&
+      alltrue([for rule in aws_backup_plan.this.rule : rule.start_window == 60 && rule.completion_window == 720])
+    )
+    error_message = "The plan must retain bounded daily and weekly recovery points with explicit execution windows."
+  }
+
+  assert {
+    condition = (
+      aws_backup_selection.data.iam_role_arn == aws_iam_role.backup.arn &&
+      toset(aws_backup_selection.data.resources) == toset([
+        "arn:aws:s3:::llmops-production-artifacts",
+        "arn:aws:dynamodb:ap-southeast-2:123456789012:table/llmops-production-jobs",
+      ]) &&
+      toset([for attachment in aws_iam_role_policy_attachment.backup : attachment.policy_arn]) == toset([
+        "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup",
+        "arn:aws:iam::aws:policy/AWSBackupServiceRolePolicyForS3Backup",
+      ]) &&
+      toset([for attachment in aws_iam_role_policy_attachment.restore : attachment.policy_arn]) == toset([
+        "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores",
+        "arn:aws:iam::aws:policy/AWSBackupServiceRolePolicyForS3Restore",
+      ]) &&
+      jsondecode(aws_iam_role.backup.assume_role_policy).Statement[0].Principal.Service == "backup.amazonaws.com" &&
+      jsondecode(aws_iam_role.backup.assume_role_policy).Statement[0].Condition.StringEquals["aws:SourceAccount"] == "123456789012" &&
+      aws_iam_role.restore.assume_role_policy == aws_iam_role.backup.assume_role_policy &&
+      !strcontains(join(" ", concat(values(local.backup_policy_arns), values(local.restore_policy_arns))), "ECR") &&
+      !strcontains(join(" ", concat(values(local.backup_policy_arns), values(local.restore_policy_arns))), "CodeDeploy")
+    )
+    error_message = "Backup and restore roles must remain separate from deployment and target only explicit protected resources."
+  }
+
+  assert {
+    condition = (
+      aws_backup_restore_testing_plan.this[0].schedule_expression == "cron(0 8 1 * ? *)" &&
+      aws_backup_restore_testing_plan.this[0].recovery_point_selection[0].algorithm == "LATEST_WITHIN_WINDOW" &&
+      aws_backup_restore_testing_plan.this[0].recovery_point_selection[0].include_vaults == toset([aws_backup_vault.this.arn]) &&
+      aws_backup_restore_testing_plan.this[0].recovery_point_selection[0].recovery_point_types == toset(["SNAPSHOT"]) &&
+      aws_backup_restore_testing_plan.this[0].recovery_point_selection[0].selection_window_days == 35 &&
+      length(aws_backup_restore_testing_selection.data) == 2 &&
+      aws_backup_restore_testing_selection.data["s3"].protected_resource_type == "S3" &&
+      aws_backup_restore_testing_selection.data["s3"].protected_resource_arns == toset(["arn:aws:s3:::llmops-production-artifacts"]) &&
+      aws_backup_restore_testing_selection.data["dynamodb"].protected_resource_type == "DynamoDB" &&
+      aws_backup_restore_testing_selection.data["dynamodb"].protected_resource_arns == toset(["arn:aws:dynamodb:ap-southeast-2:123456789012:table/llmops-production-jobs"]) &&
+      alltrue([for selection in aws_backup_restore_testing_selection.data : selection.validation_window_hours == 1 && selection.iam_role_arn == aws_iam_role.restore.arn])
+    )
+    error_message = "Monthly restore tests must exercise the latest S3 and DynamoDB snapshots through the isolated restore role."
   }
 }
 
@@ -348,4 +457,13 @@ run "rejects_hourly_cost_guardrail_above_monthly_budget" {
     alarm_llm_hourly_cost_threshold_usd = 101
   }
   expect_failures = [var.alarm_llm_hourly_cost_threshold_usd]
+}
+
+run "rejects_unrecoverable_production_configuration" {
+  command = plan
+  variables {
+    backup_weekly_retention_days   = 364
+    backup_restore_testing_enabled = false
+  }
+  expect_failures = [var.backup_weekly_retention_days, var.backup_restore_testing_enabled]
 }
