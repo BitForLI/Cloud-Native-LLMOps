@@ -9,7 +9,9 @@ ECR repositories for cross-environment manifest promotion. Destination image
 writes, source reads, ECS service updates, and role passing remain separately
 scoped; wildcard repository inputs are rejected.
 
-Promotion-only roles may call `PutImage` but cannot upload new layers. In
+Promotion-only roles normally call only `PutImage`. When supply-chain signing
+is enabled, they may also upload Cosign signature layers, but all writes remain
+scoped to the two destination repositories. In
 production, direct API `UpdateService` access is removed so CodeDeploy cannot
 be bypassed; GitHub can still roll the headless Worker safely.
 

@@ -23,6 +23,9 @@ remote shell access, deployments, queue mutation, and backup/restore changes.
 
 For a release blocked by rolling SLO data, follow
 [`error-budget-exhaustion.md`](error-budget-exhaustion.md).
+For an unsigned image, missing SBOM, identity mismatch, or signing-service
+failure, follow
+[`supply-chain-verification-failure.md`](supply-chain-verification-failure.md).
 
 ## Containment
 

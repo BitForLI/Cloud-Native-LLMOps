@@ -502,6 +502,7 @@ run "production_role_cannot_bypass_artifact_or_api_release" {
       "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/staging/worker",
     ]
     promotion_only                   = true
+    supply_chain_signing_enabled     = true
     github_api_update_enabled        = false
     artifact_bucket_arn              = "arn:aws:s3:::llmops-production-artifacts"
     job_table_arn                    = "arn:aws:dynamodb:ap-southeast-2:123456789012:table/llmops-production-jobs"
@@ -518,13 +519,14 @@ run "production_role_cannot_bypass_artifact_or_api_release" {
 
   assert {
     condition = (
-      one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "PushServiceImages"]).Action == ["ecr:PutImage"] &&
+      contains(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "PushServiceImages"]).Action, "ecr:UploadLayerPart") &&
+      contains(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "ReadPromotionSources"]).Action, "ecr:GetDownloadUrlForLayer") &&
       length(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "UpdateDeploymentServices"]).Resource) == 1 &&
       endswith(one(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "UpdateDeploymentServices"]).Resource), "-worker") &&
       length([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "ReadReleaseVerificationSecret"]) == 1 &&
       length([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "DecryptReleaseVerificationSecret"]) == 1
     )
-    error_message = "Production automation may only copy manifests and directly update the Worker service."
+    error_message = "Production automation may copy signed manifests, write scoped signatures, and directly update only the Worker service."
   }
 
   assert {

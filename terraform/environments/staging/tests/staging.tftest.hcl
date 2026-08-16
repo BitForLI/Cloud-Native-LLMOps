@@ -90,6 +90,7 @@ run "promotion_role_is_source_scoped" {
       "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/dev/worker",
     ]
     promotion_only                   = true
+    supply_chain_signing_enabled     = true
     artifact_bucket_arn              = "arn:aws:s3:::llmops-staging-artifacts"
     job_table_arn                    = "arn:aws:dynamodb:ap-southeast-2:123456789012:table/llmops-staging-jobs"
     inference_queue_arn              = "arn:aws:sqs:ap-southeast-2:123456789012:llmops-staging-inference"
@@ -107,11 +108,16 @@ run "promotion_role_is_source_scoped" {
       strcontains(local.github_trust_policy, ":environment:staging") &&
       length(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "ReadPromotionSources"]).Resource) == 2 &&
       contains(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "ReadPromotionSources"]).Action, "ecr:BatchGetImage") &&
-      one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "PushServiceImages"]).Action == ["ecr:PutImage"] &&
+      contains(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "PushServiceImages"]).Action, "ecr:UploadLayerPart") &&
+      contains(one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "ReadPromotionSources"]).Action, "ecr:GetDownloadUrlForLayer") &&
+      one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "VerifyDestinationSupplyChain"]).Resource == [
+        "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/staging/api",
+        "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/staging/worker",
+      ] &&
       one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "ReadReleaseVerificationSecret"]).Resource == ["arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:llmops-staging/api-auth-token-AbCdEf"] &&
       one([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "DecryptReleaseVerificationSecret"]).Resource == ["arn:aws:kms:ap-southeast-2:123456789012:key/00000000-0000-0000-0000-000000000000"]
     )
-    error_message = "Promotion role must trust staging and read exactly two source repositories."
+    error_message = "Promotion role must trust staging, verify exact sources, and write signatures only to both destinations."
   }
 
   assert {

@@ -70,6 +70,17 @@ jobs:
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
           unset-current-credentials: true
 
+      - name: Install pinned Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      - name: Install pinned Syft
+        id: syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          syft-version: v1.50.0
+
       - name: Authenticate Docker to private ECR
         shell: bash
         run: |
@@ -136,13 +147,62 @@ jobs:
           scan_repository "$API_ECR_REPOSITORY"
           scan_repository "$WORKER_ECR_REPOSITORY"
 
+          mkdir -p artifacts
+          api_digest=$(aws ecr describe-images --repository-name "$API_ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text)
+          worker_digest=$(aws ecr describe-images --repository-name "$WORKER_ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text)
+          [[ "$api_digest" == sha256:* && "$worker_digest" == sha256:* ]]
+          api_ref="${registry}/${API_ECR_REPOSITORY}@${api_digest}"
+          worker_ref="${registry}/${WORKER_ECR_REPOSITORY}@${worker_digest}"
+
+          "${{ steps.syft.outputs.cmd }}" "$api_image" -o spdx-json=artifacts/api.spdx.json
+          "${{ steps.syft.outputs.cmd }}" "$worker_image" -o spdx-json=artifacts/worker.spdx.json
+          jq -e '(.spdxVersion | startswith("SPDX-")) and (.packages | length > 0)' artifacts/api.spdx.json >/dev/null
+          jq -e '(.spdxVersion | startswith("SPDX-")) and (.packages | length > 0)' artifacts/worker.spdx.json >/dev/null
+
+          for specification in "api:${api_ref}" "worker:${worker_ref}"; do
+            service=${specification%%:*}
+            image_ref=${specification#*:}
+            if ! cosign verify \
+              --certificate-identity "https://github.com/BitForLI/Cloud-Native-LLMOps/.github/workflows/deploy-dev.yml@refs/heads/master" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              --annotations "git_sha=${IMAGE_TAG}" "$image_ref" >/dev/null 2>&1; then
+              cosign sign --yes --annotations "git_sha=${IMAGE_TAG}" "$image_ref"
+            fi
+            if ! cosign verify-attestation \
+              --certificate-identity "https://github.com/BitForLI/Cloud-Native-LLMOps/.github/workflows/deploy-dev.yml@refs/heads/master" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              --type spdxjson "$image_ref" >/dev/null 2>&1; then
+              cosign attest --yes --type spdxjson --predicate "artifacts/${service}.spdx.json" "$image_ref"
+            fi
+            cosign verify \
+              --certificate-identity "https://github.com/BitForLI/Cloud-Native-LLMOps/.github/workflows/deploy-dev.yml@refs/heads/master" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              --annotations "git_sha=${IMAGE_TAG}" "$image_ref" >/dev/null
+            cosign verify-attestation \
+              --certificate-identity "https://github.com/BitForLI/Cloud-Native-LLMOps/.github/workflows/deploy-dev.yml@refs/heads/master" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              --type spdxjson "$image_ref" >/dev/null
+          done
+
+      - name: Retain immutable build SBOMs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-sboms-${{ github.event.workflow_run.head_sha }}
+          path: artifacts/*.spdx.json
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Register task definitions and deploy both services
         shell: bash
         run: |
           set -Eeuo pipefail
           registry="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-          api_image="${registry}/${API_ECR_REPOSITORY}:${IMAGE_TAG}"
-          worker_image="${registry}/${WORKER_ECR_REPOSITORY}:${IMAGE_TAG}"
+          api_digest=$(aws ecr describe-images --repository-name "$API_ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text)
+          worker_digest=$(aws ecr describe-images --repository-name "$WORKER_ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text)
+          api_image="${registry}/${API_ECR_REPOSITORY}@${api_digest}"
+          worker_image="${registry}/${WORKER_ECR_REPOSITORY}@${worker_digest}"
+          [[ "$api_digest" == sha256:* && "$worker_digest" == sha256:* ]]
           previous_api_task=""
           previous_worker_task=""
           deployment_started=false

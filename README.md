@@ -320,6 +320,26 @@ budget. Its prompt-free JSON decision record is retained for 90 days; exhausted
 budgets or insufficient observations freeze the release and route operators to
 the error-budget runbook.
 
+### Signed software supply chain
+
+Development delivery generates SPDX JSON SBOMs for the API and Worker images
+with pinned Syft, retains them for 90 days, and attaches them to the immutable
+image digests as keyless Cosign attestations. The same GitHub OIDC identity signs
+each digest with the exact commit SHA as a required annotation; there are no
+long-lived signing keys.
+
+Staging refuses an image unless both its builder signature and SBOM attestation
+verify against the exact `deploy-dev.yml` identity. It then signs the unchanged
+digest with the protected staging identity. Production accepts only that exact
+staging identity, signs the production copy, verifies it again, and registers
+ECS task definitions using `repository@sha256:...` references. A tag collision,
+missing SBOM, wrong workflow identity, wrong commit annotation, digest change,
+or transparency verification failure stops delivery before ECS is modified.
+Operational response is documented in the
+[`supply-chain-verification-failure`](docs/runbooks/supply-chain-verification-failure.md)
+runbook; signing-service outages freeze new releases without affecting the
+already digest-pinned tasks.
+
 The ALB runs two target groups. CodeDeploy shifts 10% of production traffic to
 green for five minutes, watches focused API/LLM/compute CloudWatch alarms, then
 shifts the remaining 90%. An alarm or deployment failure automatically returns

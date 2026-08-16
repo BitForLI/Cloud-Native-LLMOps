@@ -43,9 +43,20 @@ variable "promotion_source_ecr_repository_arns" {
 }
 
 variable "promotion_only" {
-  description = "Restrict destination ECR writes to manifests whose layers already exist in the account registry."
+  description = "Restrict destination ECR writes to promoted manifests unless supply-chain signing needs small signature-layer uploads."
   type        = bool
   default     = false
+}
+
+variable "supply_chain_signing_enabled" {
+  description = "Allow a promotion role to upload Cosign signature layers to its destination repositories."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.supply_chain_signing_enabled || var.promotion_only
+    error_message = "supply_chain_signing_enabled is only valid for a promotion-only role."
+  }
 }
 
 variable "github_api_update_enabled" {

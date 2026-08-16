@@ -295,7 +295,7 @@ locals {
       {
         Sid    = "PushServiceImages"
         Effect = "Allow"
-        Action = var.promotion_only ? ["ecr:PutImage"] : [
+        Action = var.promotion_only && !var.supply_chain_signing_enabled ? ["ecr:PutImage"] : [
           "ecr:BatchCheckLayerAvailability",
           "ecr:CompleteLayerUpload",
           "ecr:InitiateLayerUpload",
@@ -313,13 +313,24 @@ locals {
         ]
         Resource = local.ecr_repository_arns
       },
+      {
+        Sid    = "VerifyDestinationSupplyChain"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchGetImage",
+          "ecr:GetDownloadUrlForLayer",
+        ]
+        Resource = local.ecr_repository_arns
+      },
       length(var.promotion_source_ecr_repository_arns) == 0 ? null : {
         Sid    = "ReadPromotionSources"
         Effect = "Allow"
         Action = [
           "ecr:BatchGetImage",
+          "ecr:BatchCheckLayerAvailability",
           "ecr:DescribeImages",
           "ecr:DescribeImageScanFindings",
+          "ecr:GetDownloadUrlForLayer",
         ]
         Resource = sort(tolist(var.promotion_source_ecr_repository_arns))
       },

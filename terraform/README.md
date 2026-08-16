@@ -207,15 +207,18 @@ The staging root is deliberately stricter: it requires HTTPS, per-AZ NAT,
 redundant API and Worker tasks, protected data/load-balancer resources, and the
 existing account OIDC provider. Its deploy role trusts only the protected
 GitHub `staging` environment and can read only the two configured dev source
-repositories. Promotion copies the already-scanned ECR manifests by digest;
-it cannot substitute a rebuild.
+repositories. Promotion verifies the builder's keyless signature and SPDX
+attestation, copies the already-scanned ECR manifests by digest, and adds a
+protected staging signature; it cannot substitute a rebuild.
 
 Production adds a second ALB target group and an ECS CodeDeploy deployment
 group using `CodeDeployDefault.ECSCanary10Percent5Minutes`. Five focused API
 alarms stop traffic shifting and trigger automatic rollback; the old task set
 is retained for a configurable bake window. The production GitHub role can
-copy existing staging manifests but cannot upload container layers, and its
-CodeDeploy permissions are scoped to the single production deployment group.
+copy existing staging manifests and has the ECR layer APIs that keyless signing
+requires, scoped to its two destination repositories. The workflow has no image
+build step. Its CodeDeploy permissions remain scoped to the single production
+deployment group, and ECS receives only the verified digest reference.
 
 Production also creates a separate GitHub OIDC role for continuous evaluation.
 It trusts only the exact `production-monitoring` environment subject and may

@@ -472,6 +472,28 @@ run "rejects_wildcard_bedrock_model" {
   expect_failures = [var.bedrock_model_ids]
 }
 
+run "rejects_signing_without_a_promotion_boundary" {
+  command = plan
+
+  module {
+    source = "../../modules/iam"
+  }
+
+  variables {
+    name                         = "llmops-test"
+    api_ecr_repository_arn       = "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/api"
+    worker_ecr_repository_arn    = "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/worker"
+    artifact_bucket_arn          = "arn:aws:s3:::llmops-artifacts"
+    job_table_arn                = "arn:aws:dynamodb:ap-southeast-2:123456789012:table/llmops-jobs"
+    inference_queue_arn          = "arn:aws:sqs:ap-southeast-2:123456789012:llmops-inference"
+    bedrock_model_ids            = ["test-model"]
+    github_oidc_subjects         = ["repo:example/repository:ref:refs/heads/main"]
+    supply_chain_signing_enabled = true
+  }
+
+  expect_failures = [var.supply_chain_signing_enabled]
+}
+
 run "alb_http_development_boundary" {
   command = plan
 

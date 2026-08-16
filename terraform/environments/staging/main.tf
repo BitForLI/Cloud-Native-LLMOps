@@ -69,6 +69,7 @@ module "iam" {
   worker_ecr_repository_arn            = module.worker_ecr.repository_arn
   promotion_source_ecr_repository_arns = var.promotion_source_ecr_repository_arns
   promotion_only                       = true
+  supply_chain_signing_enabled         = true
   artifact_bucket_arn                  = module.database.artifact_bucket_arn
   job_table_arn                        = module.database.job_table_arn
   inference_queue_arn                  = module.queue.queue_arn

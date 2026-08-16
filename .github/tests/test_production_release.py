@@ -48,6 +48,10 @@ def test_release_promotes_digest_uses_codedeploy_and_recovers_both_services():
     for fragment in (
         "batch-get-image",
         '[[ "$destination_digest" == "$source_digest" ]]',
+        "verify_staging_supply_chain",
+        "sign_production_image",
+        '--annotations "git_sha=${IMAGE_TAG}"',
+        '@${api_digest}',
         "findingSeverityCounts.CRITICAL",
         "findingSeverityCounts.HIGH",
         "create_api_deployment",

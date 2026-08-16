@@ -8,6 +8,12 @@ done
 [[ "$IMAGE_TAG" =~ ^[0-9a-f]{40}$ ]] || { echo "IMAGE_TAG must be a 40-character commit SHA" >&2; exit 1; }
 [[ "$API_URL" =~ ^https://[^/]+/?$ ]] || { echo "Production API_URL must be an HTTPS origin" >&2; exit 1; }
 
+registry="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$registry" >/dev/null
+staging_identity="https://github.com/BitForLI/Cloud-Native-LLMOps/.github/workflows/promote-staging.yml@refs/heads/master"
+production_identity="https://github.com/BitForLI/Cloud-Native-LLMOps/.github/workflows/release-production.yml@refs/heads/master"
+oidc_issuer="https://token.actions.githubusercontent.com"
+
 API_AUTH_TOKEN=$(aws secretsmanager get-secret-value --secret-id "$API_AUTH_SECRET_ID" --query SecretString --output text)
 [[ "$API_AUTH_TOKEN" =~ ^[A-Za-z0-9_-]{32,128}$ ]] || { echo "Production API authentication secret must contain 32-128 URL-safe characters" >&2; exit 1; }
 echo "::add-mask::${API_AUTH_TOKEN}"
@@ -24,6 +30,28 @@ scan_gate() {
   [[ "$critical" -eq 0 && "$high" -eq 0 ]] || { echo "Vulnerability gate failed for ${repository}: CRITICAL=${critical}, HIGH=${high}" >&2; return 1; }
 }
 
+verify_staging_supply_chain() {
+  local image_ref="$1"
+  cosign verify \
+    --certificate-identity "$staging_identity" \
+    --certificate-oidc-issuer "$oidc_issuer" \
+    --annotations "git_sha=${IMAGE_TAG}" "$image_ref" >/dev/null
+}
+
+sign_production_image() {
+  local image_ref="$1"
+  if ! cosign verify \
+    --certificate-identity "$production_identity" \
+    --certificate-oidc-issuer "$oidc_issuer" \
+    --annotations "git_sha=${IMAGE_TAG}" "$image_ref" >/dev/null 2>&1; then
+    cosign sign --yes --annotations "git_sha=${IMAGE_TAG}" "$image_ref"
+  fi
+  cosign verify \
+    --certificate-identity "$production_identity" \
+    --certificate-oidc-issuer "$oidc_issuer" \
+    --annotations "git_sha=${IMAGE_TAG}" "$image_ref" >/dev/null
+}
+
 promote_image() {
   local source_repository="$1" destination_repository="$2"
   scan_gate "$source_repository"
@@ -31,12 +59,14 @@ promote_image() {
   manifest=$(aws ecr batch-get-image --repository-name "$source_repository" --image-ids imageTag="$IMAGE_TAG" --query 'images[0].imageManifest' --output text)
   source_digest=$(aws ecr describe-images --repository-name "$source_repository" --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text)
   [[ -n "$manifest" && "$manifest" != "None" && "$source_digest" == sha256:* ]] || { echo "Source image is missing: ${source_repository}:${IMAGE_TAG}" >&2; return 1; }
+  verify_staging_supply_chain "${registry}/${source_repository}@${source_digest}"
   if ! aws ecr describe-images --repository-name "$destination_repository" --image-ids imageTag="$IMAGE_TAG" >/dev/null 2>&1; then
     aws ecr put-image --repository-name "$destination_repository" --image-tag "$IMAGE_TAG" --image-manifest "$manifest" >/dev/null
   fi
   destination_digest=$(aws ecr describe-images --repository-name "$destination_repository" --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text)
   [[ "$destination_digest" == "$source_digest" ]] || { echo "Production promotion changed the image digest" >&2; return 1; }
   scan_gate "$destination_repository"
+  sign_production_image "${registry}/${destination_repository}@${destination_digest}"
   echo "Promoted ${source_repository}@${source_digest} to ${destination_repository}:${IMAGE_TAG}"
 }
 
@@ -55,9 +85,11 @@ create_api_deployment() {
 promote_image "$STAGING_API_ECR_REPOSITORY" "$PRODUCTION_API_ECR_REPOSITORY"
 promote_image "$STAGING_WORKER_ECR_REPOSITORY" "$PRODUCTION_WORKER_ECR_REPOSITORY"
 
-registry="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-api_image="${registry}/${PRODUCTION_API_ECR_REPOSITORY}:${IMAGE_TAG}"
-worker_image="${registry}/${PRODUCTION_WORKER_ECR_REPOSITORY}:${IMAGE_TAG}"
+api_digest=$(aws ecr describe-images --repository-name "$PRODUCTION_API_ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text)
+worker_digest=$(aws ecr describe-images --repository-name "$PRODUCTION_WORKER_ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text)
+api_image="${registry}/${PRODUCTION_API_ECR_REPOSITORY}@${api_digest}"
+worker_image="${registry}/${PRODUCTION_WORKER_ECR_REPOSITORY}@${worker_digest}"
+[[ "$api_digest" == sha256:* && "$worker_digest" == sha256:* ]]
 previous_api_task=$(aws ecs describe-task-sets --cluster "$ECS_CLUSTER" --service "$API_ECS_SERVICE" --query "taskSets[?status=='PRIMARY'].taskDefinition | [0]" --output text)
 previous_worker_task=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$WORKER_ECS_SERVICE" --query 'services[0].taskDefinition' --output text)
 [[ "$previous_api_task" == arn:* && "$previous_worker_task" == arn:* ]]
