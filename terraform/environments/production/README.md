@@ -26,6 +26,12 @@ terraform -chdir=terraform/environments/production apply
 terraform -chdir=terraform/environments/production output -json deployment_github_variables
 ```
 
+Set `monthly_budget_limit_usd` and
+`alarm_llm_hourly_cost_threshold_usd` to deliberate operating limits before
+apply. The first covers account billing spend; the second is the faster
+application-estimated Bedrock signal. Confirm the SNS email subscription or
+neither operational nor budget notifications will reach the recipient.
+
 Put the output values plus `STAGING_API_ECR_REPOSITORY` and
 `STAGING_WORKER_ECR_REPOSITORY` in the protected GitHub `production`
 environment. Require reviewers, prevent self-review, enforce deployment from

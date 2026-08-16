@@ -220,3 +220,11 @@ read the API verification secret, publish metrics only in
 `CloudNativeLLMOps`, and conditionally create objects only under the artifact
 bucket's `evaluations/` prefix. It has no ECR, ECS, CodeDeploy, or
 `iam:PassRole` permissions.
+
+The `cost_control` module creates the production account's monthly cost budget
+and sends 80%-actual and 100%-forecast alerts to the same encrypted SNS topic.
+The monitoring module grants only same-account, source-ARN-scoped AWS Budgets
+publishing and adds a combined API/Worker hourly estimated LLM cost alarm.
+Budget alerts are account-level so Bedrock invocation charges are not omitted
+by resource-tag filtering; use a dedicated workload account or set the limit
+to account for colocated workloads.

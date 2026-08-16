@@ -91,6 +91,24 @@ variable "evaluation_accuracy_threshold" {
   }
 }
 
+variable "budget_notifications_enabled" {
+  description = "Allow same-account AWS Budgets to publish into the encrypted alarm topic."
+  type        = bool
+  default     = false
+}
+
+variable "llm_hourly_cost_threshold_usd" {
+  description = "Optional combined API and Worker estimated LLM cost per hour alarm threshold."
+  type        = number
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.llm_hourly_cost_threshold_usd == null || var.llm_hourly_cost_threshold_usd > 0
+    error_message = "llm_hourly_cost_threshold_usd must be null or greater than zero."
+  }
+}
+
 variable "queue_name" {
   description = "Inference queue CloudWatch dimension value."
   type        = string

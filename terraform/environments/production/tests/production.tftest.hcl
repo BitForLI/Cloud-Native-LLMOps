@@ -55,7 +55,12 @@ run "resilient_production_defaults" {
       startswith(output.production_safety_profile.waf_log_group, "aws-waf-logs-") &&
       output.production_safety_profile.waf_rate_limit == 5000 &&
       output.production_safety_profile.waf_alarm_name != null &&
-      length(output.production_safety_profile.evaluation_alarm_names) == 3
+      length(output.production_safety_profile.evaluation_alarm_names) == 3 &&
+      output.production_safety_profile.llm_hourly_cost_alarm != null &&
+      output.production_safety_profile.monthly_budget_name == "cloud-native-llmops-prod-monthly-cost" &&
+      output.production_safety_profile.monthly_budget_limit_usd == 100 &&
+      output.production_safety_profile.budget_alert_thresholds.actual_percent == 80 &&
+      output.production_safety_profile.budget_alert_thresholds.forecast_percent == 100
     )
     error_message = "Production must preserve multi-AZ capacity, retention, deletion protection, and two target groups."
   }
@@ -91,6 +96,32 @@ run "resilient_production_defaults" {
       "WORKER_ECS_SERVICE",
     ])
     error_message = "Production must expose the complete non-secret release configuration."
+  }
+}
+
+run "monthly_budget_warns_before_and_at_forecasted_limit" {
+  command = apply
+
+  module { source = "../../modules/cost_control" }
+
+  variables {
+    name                     = "llmops-production"
+    monthly_budget_limit_usd = 100
+    notification_topic_arn   = "arn:aws:sns:ap-southeast-2:123456789012:llmops-production-alarms"
+  }
+
+  assert {
+    condition = (
+      aws_budgets_budget.monthly.budget_type == "COST" &&
+      aws_budgets_budget.monthly.time_unit == "MONTHLY" &&
+      aws_budgets_budget.monthly.limit_unit == "USD" &&
+      tonumber(aws_budgets_budget.monthly.limit_amount) == 100 &&
+      length(aws_budgets_budget.monthly.notification) == 2 &&
+      one([for notification in aws_budgets_budget.monthly.notification : notification if notification.notification_type == "ACTUAL"]).threshold == 80 &&
+      one([for notification in aws_budgets_budget.monthly.notification : notification if notification.notification_type == "FORECASTED"]).threshold == 100 &&
+      alltrue([for notification in aws_budgets_budget.monthly.notification : notification.subscriber_sns_topic_arns == toset(["arn:aws:sns:ap-southeast-2:123456789012:llmops-production-alarms"])])
+    )
+    error_message = "The monthly budget must alert on actual and forecast spend through the encrypted operations topic."
   }
 }
 
@@ -225,4 +256,13 @@ run "rejects_missing_alarm_recipient" {
   command = plan
   variables { alarm_notification_emails = [] }
   expect_failures = [var.alarm_notification_emails]
+}
+
+run "rejects_hourly_cost_guardrail_above_monthly_budget" {
+  command = plan
+  variables {
+    monthly_budget_limit_usd            = 100
+    alarm_llm_hourly_cost_threshold_usd = 101
+  }
+  expect_failures = [var.alarm_llm_hourly_cost_threshold_usd]
 }

@@ -9,32 +9,41 @@ locals {
   }
   alarm_key_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "EnableAccountAdministration", Effect = "Allow", Action = "kms:*", Resource = "*"
-        Principal = { AWS = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root" }
-      },
-      {
-        Sid       = "AllowCloudWatchAlarmEncryption", Effect = "Allow", Resource = "*"
-        Principal = { Service = "cloudwatch.amazonaws.com" }
-        Action    = ["kms:Decrypt", "kms:GenerateDataKey*"]
-        Condition = {
-          StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
-          ArnLike      = { "aws:SourceArn" = "arn:${data.aws_partition.current.partition}:cloudwatch:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alarm:${var.name}-*" }
-        }
-      },
-      {
-        Sid       = "AllowSNSDelivery", Effect = "Allow", Resource = "*"
-        Principal = { Service = "sns.amazonaws.com" }
-        Action    = ["kms:Decrypt", "kms:GenerateDataKey*"]
-        Condition = {
-          StringEquals = {
-            "aws:SourceAccount"                      = data.aws_caller_identity.current.account_id
-            "kms:EncryptionContext:aws:sns:topicArn" = local.alarm_topic_arn
+    Statement = concat(
+      [
+        {
+          Sid       = "EnableAccountAdministration", Effect = "Allow", Action = "kms:*", Resource = "*"
+          Principal = { AWS = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root" }
+        },
+        {
+          Sid       = "AllowCloudWatchAlarmEncryption", Effect = "Allow", Resource = "*"
+          Principal = { Service = "cloudwatch.amazonaws.com" }
+          Action    = ["kms:Decrypt", "kms:GenerateDataKey*"]
+          Condition = {
+            StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
+            ArnLike      = { "aws:SourceArn" = "arn:${data.aws_partition.current.partition}:cloudwatch:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alarm:${var.name}-*" }
           }
-        }
-      },
-    ]
+        },
+        {
+          Sid       = "AllowSNSDelivery", Effect = "Allow", Resource = "*"
+          Principal = { Service = "sns.amazonaws.com" }
+          Action    = ["kms:Decrypt", "kms:GenerateDataKey*"]
+          Condition = {
+            StringEquals = {
+              "aws:SourceAccount"                      = data.aws_caller_identity.current.account_id
+              "kms:EncryptionContext:aws:sns:topicArn" = local.alarm_topic_arn
+            }
+          }
+        },
+      ],
+      var.budget_notifications_enabled ? [{
+        Sid       = "AllowAWSBudgetsEncryption"
+        Effect    = "Allow"
+        Resource  = "*"
+        Principal = { Service = "budgets.amazonaws.com" }
+        Action    = ["kms:Decrypt", "kms:GenerateDataKey*"]
+      }] : [],
+    )
   })
 }
 
@@ -64,21 +73,34 @@ resource "aws_sns_topic_policy" "alarms" {
   arn = aws_sns_topic.alarms.arn
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "AccountAdministration", Effect = "Allow", Resource = aws_sns_topic.alarms.arn
-        Principal = { AWS = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root" }
-        Action    = ["sns:GetTopicAttributes", "sns:SetTopicAttributes", "sns:AddPermission", "sns:RemovePermission", "sns:DeleteTopic", "sns:Subscribe", "sns:ListSubscriptionsByTopic", "sns:Publish"]
-      },
-      {
-        Sid       = "AllowScopedCloudWatchAlarms", Effect = "Allow", Action = "sns:Publish", Resource = aws_sns_topic.alarms.arn
-        Principal = { Service = "cloudwatch.amazonaws.com" }
+    Statement = concat(
+      [
+        {
+          Sid       = "AccountAdministration", Effect = "Allow", Resource = aws_sns_topic.alarms.arn
+          Principal = { AWS = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root" }
+          Action    = ["sns:GetTopicAttributes", "sns:SetTopicAttributes", "sns:AddPermission", "sns:RemovePermission", "sns:DeleteTopic", "sns:Subscribe", "sns:ListSubscriptionsByTopic", "sns:Publish"]
+        },
+        {
+          Sid       = "AllowScopedCloudWatchAlarms", Effect = "Allow", Action = "sns:Publish", Resource = aws_sns_topic.alarms.arn
+          Principal = { Service = "cloudwatch.amazonaws.com" }
+          Condition = {
+            StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
+            ArnLike      = { "aws:SourceArn" = "arn:${data.aws_partition.current.partition}:cloudwatch:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alarm:${var.name}-*" }
+          }
+        },
+      ],
+      var.budget_notifications_enabled ? [{
+        Sid       = "AllowScopedAWSBudgets"
+        Effect    = "Allow"
+        Action    = "sns:Publish"
+        Resource  = aws_sns_topic.alarms.arn
+        Principal = { Service = "budgets.amazonaws.com" }
         Condition = {
           StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
-          ArnLike      = { "aws:SourceArn" = "arn:${data.aws_partition.current.partition}:cloudwatch:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alarm:${var.name}-*" }
+          ArnLike      = { "aws:SourceArn" = "arn:${data.aws_partition.current.partition}:budgets::${data.aws_caller_identity.current.account_id}:*" }
         }
-      },
-    ]
+      }] : [],
+    )
   })
 }
 
@@ -473,6 +495,47 @@ resource "aws_cloudwatch_metric_alarm" "evaluation_accuracy" {
   alarm_actions       = local.alarm_actions
   ok_actions          = local.alarm_actions
   tags                = local.common_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "llm_hourly_cost" {
+  count = var.llm_hourly_cost_threshold_usd == null ? 0 : 1
+
+  alarm_name          = "${var.name}-llm-hourly-estimated-cost"
+  alarm_description   = "Combined API and Worker estimated LLM cost exceeded the hourly guardrail."
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = var.llm_hourly_cost_threshold_usd
+  evaluation_periods  = 1
+  datapoints_to_alarm = 1
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+  tags                = local.common_tags
+
+  metric_query {
+    id          = "total_cost"
+    expression  = "api_cost+worker_cost"
+    label       = "Hourly estimated LLM cost (USD)"
+    return_data = true
+  }
+
+  dynamic "metric_query" {
+    for_each = toset(["api", "worker"])
+    content {
+      id          = "${metric_query.value}_cost"
+      return_data = false
+      metric {
+        metric_name = "EstimatedCostUSD"
+        namespace   = local.metric_namespace
+        period      = 3600
+        stat        = "Sum"
+        dimensions = {
+          Environment = var.environment
+          Service     = metric_query.value
+          Model       = var.bedrock_model_id
+        }
+      }
+    }
+  }
 }
 
 resource "aws_cloudwatch_dashboard" "this" {

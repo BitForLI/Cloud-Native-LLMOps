@@ -166,6 +166,8 @@ module "monitoring" {
   waf_web_acl_metric_name                = "${replace(local.name, "-", "")}WebAcl"
   evaluation_monitoring_enabled          = true
   evaluation_accuracy_threshold          = 0.90
+  budget_notifications_enabled           = true
+  llm_hourly_cost_threshold_usd          = var.alarm_llm_hourly_cost_threshold_usd
   queue_name                             = module.queue.queue_name
   dead_letter_queue_name                 = module.queue.dead_letter_queue_name
   api_log_group_name                     = module.ecs.api_log_group_name
@@ -177,6 +179,17 @@ module "monitoring" {
   queue_age_threshold_seconds            = var.alarm_queue_age_threshold_seconds
   resource_utilization_threshold_percent = var.alarm_resource_utilization_threshold_percent
   tags                                   = local.common_tags
+}
+
+module "cost_control" {
+  source = "../../modules/cost_control"
+
+  name                     = local.name
+  monthly_budget_limit_usd = var.monthly_budget_limit_usd
+  notification_topic_arn   = module.monitoring.alarm_topic_arn
+  tags                     = local.common_tags
+
+  depends_on = [module.monitoring]
 }
 
 module "waf" {

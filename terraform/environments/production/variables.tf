@@ -330,3 +330,25 @@ variable "alarm_resource_utilization_threshold_percent" {
   type        = number
   default     = 80
 }
+
+variable "monthly_budget_limit_usd" {
+  description = "Monthly AWS account cost budget for the production workload."
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.monthly_budget_limit_usd > 0 && var.monthly_budget_limit_usd <= 1000000
+    error_message = "monthly_budget_limit_usd must be greater than zero and at most 1,000,000."
+  }
+}
+
+variable "alarm_llm_hourly_cost_threshold_usd" {
+  description = "Combined estimated Bedrock cost per hour that triggers an operational alarm."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.alarm_llm_hourly_cost_threshold_usd > 0 && var.alarm_llm_hourly_cost_threshold_usd <= var.monthly_budget_limit_usd
+    error_message = "alarm_llm_hourly_cost_threshold_usd must be positive and no greater than the monthly budget."
+  }
+}

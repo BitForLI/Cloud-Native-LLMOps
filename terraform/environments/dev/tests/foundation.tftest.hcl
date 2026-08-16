@@ -735,23 +735,25 @@ run "monitoring_covers_platform_and_llm_failure_modes" {
   }
 
   variables {
-    name                         = "llmops-test"
-    environment                  = "test"
-    aws_region                   = "ap-southeast-2"
-    cluster_name                 = "llmops-cluster"
-    api_service_name             = "llmops-api"
-    worker_service_name          = "llmops-worker"
-    load_balancer_arn_suffix     = "app/llmops/0000000000000000"
-    target_group_arn_suffix      = "targetgroup/llmops/0000000000000000"
-    queue_name                   = "llmops-inference"
-    dead_letter_queue_name       = "llmops-inference-dlq"
-    api_log_group_name           = "/ecs/llmops/api"
-    worker_log_group_name        = "/ecs/llmops/worker"
-    bedrock_model_id             = "anthropic.test-model"
-    waf_enabled                  = true
-    waf_web_acl_metric_name      = "llmopsWebAcl"
-    notification_emails          = ["platform@example.com"]
-    error_rate_threshold_percent = 5
+    name                          = "llmops-test"
+    environment                   = "test"
+    aws_region                    = "ap-southeast-2"
+    cluster_name                  = "llmops-cluster"
+    api_service_name              = "llmops-api"
+    worker_service_name           = "llmops-worker"
+    load_balancer_arn_suffix      = "app/llmops/0000000000000000"
+    target_group_arn_suffix       = "targetgroup/llmops/0000000000000000"
+    queue_name                    = "llmops-inference"
+    dead_letter_queue_name        = "llmops-inference-dlq"
+    api_log_group_name            = "/ecs/llmops/api"
+    worker_log_group_name         = "/ecs/llmops/worker"
+    bedrock_model_id              = "anthropic.test-model"
+    waf_enabled                   = true
+    waf_web_acl_metric_name       = "llmopsWebAcl"
+    notification_emails           = ["platform@example.com"]
+    error_rate_threshold_percent  = 5
+    budget_notifications_enabled  = true
+    llm_hourly_cost_threshold_usd = 10
   }
 
   assert {
@@ -766,10 +768,22 @@ run "monitoring_covers_platform_and_llm_failure_modes" {
   assert {
     condition = (
       strcontains(aws_kms_key.alarms.policy, "cloudwatch.amazonaws.com") &&
+      strcontains(aws_kms_key.alarms.policy, "budgets.amazonaws.com") &&
       strcontains(aws_kms_key.alarms.policy, "aws:SourceAccount") &&
-      strcontains(aws_sns_topic_policy.alarms.policy, "aws:SourceArn")
+      strcontains(aws_sns_topic_policy.alarms.policy, "aws:SourceArn") &&
+      strcontains(aws_sns_topic_policy.alarms.policy, "arn:aws:budgets::123456789012:*")
     )
     error_message = "KMS and SNS policies must scope the CloudWatch service integration against confused deputies."
+  }
+
+  assert {
+    condition = (
+      one(aws_cloudwatch_metric_alarm.llm_hourly_cost).threshold == 10 &&
+      one(aws_cloudwatch_metric_alarm.llm_hourly_cost).comparison_operator == "GreaterThanThreshold" &&
+      one([for query in one(aws_cloudwatch_metric_alarm.llm_hourly_cost).metric_query : query if query.id == "total_cost"]).expression == "api_cost+worker_cost" &&
+      toset([for query in one(aws_cloudwatch_metric_alarm.llm_hourly_cost).metric_query : query.id if query.expression == null]) == toset(["api_cost", "worker_cost"])
+    )
+    error_message = "Hourly LLM cost must combine API and Worker estimates before alerting."
   }
 
   assert {

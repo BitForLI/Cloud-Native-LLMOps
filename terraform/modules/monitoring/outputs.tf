@@ -26,7 +26,13 @@ output "alarm_names" {
     aws_cloudwatch_metric_alarm.evaluation_gate[*].alarm_name,
     aws_cloudwatch_metric_alarm.evaluation_absent[*].alarm_name,
     aws_cloudwatch_metric_alarm.evaluation_accuracy[*].alarm_name,
+    aws_cloudwatch_metric_alarm.llm_hourly_cost[*].alarm_name,
   )
+}
+
+output "llm_cost_alarm_name" {
+  description = "Hourly estimated LLM cost alarm name when configured."
+  value       = try(aws_cloudwatch_metric_alarm.llm_hourly_cost[0].alarm_name, null)
 }
 
 output "evaluation_alarm_names" {

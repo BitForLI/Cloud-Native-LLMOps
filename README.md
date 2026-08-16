@@ -69,6 +69,22 @@ Alarm and recovery notifications use an SNS topic protected by a rotating
 customer-managed KMS key; optional email recipients must confirm their SNS
 subscriptions before alerts are delivered.
 
+### Cost guardrails
+
+Production combines two cost signals. CloudWatch sums prompt-free
+`EstimatedCostUSD` metrics from both API and Worker every hour and alerts when
+the configurable fast guardrail is exceeded. AWS Budgets provides the slower
+billing-level control: by default it warns at 80% actual spend and when the
+monthly account forecast reaches 100% of the configured USD budget. Both use
+the existing encrypted SNS topic and confirmed recipients.
+
+The default production values are `$10/hour` for application-estimated LLM
+cost and `$100/month` for the AWS account budget. Override them for the model,
+traffic, and account boundary you actually operate. The budget deliberately
+alerts instead of shutting infrastructure down: an automatic cost kill switch
+could interrupt production or make durable data unavailable. AWS billing data
+is delayed, so the hourly application metric is the earlier signal.
+
 OpenTelemetry instruments FastAPI and botocore calls. API and Worker task
 definitions each include an essential, version-pinned AWS Distro for
 OpenTelemetry Collector sidecar. Applications send OTLP/gRPC only to

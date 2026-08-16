@@ -52,6 +52,10 @@ output "production_safety_profile" {
     waf_rate_limit             = module.waf.rate_limit_per_five_minutes
     waf_alarm_name             = module.waf.blocked_request_alarm_name
     evaluation_alarm_names     = module.monitoring.evaluation_alarm_names
+    llm_hourly_cost_alarm      = module.monitoring.llm_cost_alarm_name
+    monthly_budget_name        = module.cost_control.budget_name
+    monthly_budget_limit_usd   = module.cost_control.monthly_budget_limit_usd
+    budget_alert_thresholds    = module.cost_control.notification_thresholds
   }
 }
 
