@@ -415,10 +415,70 @@ resource "aws_cloudwatch_metric_alarm" "llm_p95_latency" {
   tags                = local.common_tags
 }
 
+resource "aws_cloudwatch_metric_alarm" "evaluation_gate" {
+  count = var.evaluation_monitoring_enabled ? 1 : 0
+
+  alarm_name          = "${var.name}-continuous-evaluation"
+  alarm_description   = "The latest production evaluation failed one or more quality gates."
+  namespace           = local.metric_namespace
+  metric_name         = "EvaluationPass"
+  dimensions          = { Environment = var.environment, Service = "evaluation" }
+  statistic           = "Minimum"
+  period              = 21600
+  evaluation_periods  = 1
+  datapoints_to_alarm = 1
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+  tags                = local.common_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "evaluation_absent" {
+  count = var.evaluation_monitoring_enabled ? 1 : 0
+
+  alarm_name          = "${var.name}-continuous-evaluation-absent"
+  alarm_description   = "Production evaluation has not reported for approximately 30 hours."
+  namespace           = local.metric_namespace
+  metric_name         = "EvaluationPass"
+  dimensions          = { Environment = var.environment, Service = "evaluation" }
+  statistic           = "Minimum"
+  period              = 21600
+  evaluation_periods  = 5
+  datapoints_to_alarm = 5
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+  tags                = local.common_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "evaluation_accuracy" {
+  count = var.evaluation_monitoring_enabled ? 1 : 0
+
+  alarm_name          = "${var.name}-evaluation-accuracy"
+  alarm_description   = "Production evaluation accuracy fell below its quality threshold."
+  namespace           = local.metric_namespace
+  metric_name         = "EvaluationAccuracy"
+  dimensions          = { Environment = var.environment, Service = "evaluation" }
+  statistic           = "Minimum"
+  period              = 21600
+  evaluation_periods  = 5
+  datapoints_to_alarm = 1
+  threshold           = var.evaluation_accuracy_threshold
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+  tags                = local.common_tags
+}
+
 resource "aws_cloudwatch_dashboard" "this" {
   dashboard_name = "${var.name}-operations"
   dashboard_body = jsonencode({
-    widgets = [
+    widgets = concat([
       {
         type = "metric", x = 0, y = 0, width = 12, height = 6
         properties = {
@@ -496,7 +556,18 @@ resource "aws_cloudwatch_dashboard" "this" {
           query = "SOURCE '${var.api_log_group_name}' | SOURCE '${var.worker_log_group_name}' | fields @timestamp, @logStream, level, message, error_type | filter level in ['ERROR', 'CRITICAL'] | sort @timestamp desc | limit 50"
         }
       },
-    ]
+      ], var.evaluation_monitoring_enabled ? [{
+        type = "metric", x = 0, y = 18, width = 24, height = 6
+        properties = {
+          title = "Continuous production LLM evaluation", region = var.aws_region, view = "timeSeries", period = 21600
+          metrics = [
+            [local.metric_namespace, "EvaluationAccuracy", "Environment", var.environment, "Service", "evaluation", { stat = "Minimum", label = "Accuracy", yAxis = "left" }],
+            [".", "EvaluationPass", ".", ".", ".", ".", { stat = "Minimum", label = "Gate pass", yAxis = "left" }],
+            [".", "EvaluationP95LatencyMs", ".", ".", ".", ".", { stat = "Maximum", label = "P95 latency (ms)", yAxis = "right" }],
+            [".", "EvaluationEstimatedCostUSD", ".", ".", ".", ".", { stat = "Sum", label = "Evaluation cost (USD)", yAxis = "right" }],
+          ]
+        }
+    }] : [])
   })
 
   lifecycle {

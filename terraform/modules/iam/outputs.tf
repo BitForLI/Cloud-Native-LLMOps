@@ -27,6 +27,12 @@ output "github_deploy_role_name" {
   value       = aws_iam_role.github_deploy.name
 }
 
+output "github_evaluation_role_arn" {
+  description = "Dedicated least-privilege role ARN used by continuous evaluation jobs."
+  value       = try(aws_iam_role.github_evaluation[0].arn, null)
+  depends_on  = [aws_iam_role_policy.github_evaluation]
+}
+
 output "github_oidc_provider_arn" {
   description = "Created or supplied GitHub OIDC provider ARN."
   value       = local.oidc_provider_arn

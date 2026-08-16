@@ -130,6 +130,19 @@ variable "github_oidc_subjects" {
   }
 }
 
+variable "github_evaluation_oidc_subjects" {
+  description = "Exact GitHub OIDC identity for the non-deployment production monitoring environment."
+  type        = set(string)
+  default     = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:environment:production-monitoring"]
+
+  validation {
+    condition = length(var.github_evaluation_oidc_subjects) == 1 && alltrue([
+      for subject in var.github_evaluation_oidc_subjects : endswith(subject, ":environment:production-monitoring") && !strcontains(subject, "*")
+    ])
+    error_message = "Production evaluation must trust exactly one protected production-monitoring environment identity."
+  }
+}
+
 variable "promotion_source_ecr_repository_arns" {
   description = "Concrete staging ECR repositories permitted as promotion sources."
   type        = set(string)

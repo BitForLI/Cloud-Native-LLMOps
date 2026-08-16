@@ -226,6 +226,63 @@ locals {
     }]
   })
 
+  github_evaluation_trust_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "AllowGitHubProductionEvaluation"
+      Effect    = "Allow"
+      Action    = ["sts:AssumeRoleWithWebIdentity"]
+      Principal = { Federated = [local.oidc_provider_arn] }
+      Condition = {
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = ["sts.amazonaws.com"]
+          "token.actions.githubusercontent.com:sub" = sort(tolist(var.github_evaluation_oidc_subjects))
+        }
+      }
+    }]
+  })
+
+  github_evaluation_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat(
+      [
+        {
+          Sid      = "PublishEvaluationMetrics"
+          Effect   = "Allow"
+          Action   = ["cloudwatch:PutMetricData"]
+          Resource = ["*"]
+          Condition = {
+            StringEquals = { "cloudwatch:namespace" = ["CloudNativeLLMOps"] }
+          }
+        },
+        {
+          Sid      = "WriteImmutableEvaluationEvidence"
+          Effect   = "Allow"
+          Action   = ["s3:PutObject"]
+          Resource = ["${var.artifact_bucket_arn}/evaluations/*"]
+          Condition = {
+            StringEquals = {
+              "s3:if-none-match"                = ["*"]
+              "s3:x-amz-server-side-encryption" = ["AES256"]
+            }
+          }
+        },
+      ],
+      length(var.github_verification_secret_arns) > 0 ? [{
+        Sid      = "ReadEvaluationSecret"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = sort(tolist(var.github_verification_secret_arns))
+      }] : [],
+      length(var.github_verification_kms_key_arns) > 0 ? [{
+        Sid      = "DecryptEvaluationSecret"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = sort(tolist(var.github_verification_kms_key_arns))
+      }] : [],
+    )
+  })
+
   github_deploy_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [for statement in [
@@ -380,4 +437,21 @@ resource "aws_iam_role_policy" "github_deploy" {
   name   = "${var.name}-github-deploy"
   role   = aws_iam_role.github_deploy.id
   policy = local.github_deploy_policy
+}
+
+resource "aws_iam_role" "github_evaluation" {
+  count = length(var.github_evaluation_oidc_subjects) > 0 ? 1 : 0
+
+  name                 = "${var.name}-github-evaluation"
+  assume_role_policy   = local.github_evaluation_trust_policy
+  max_session_duration = 3600
+  tags                 = merge(var.tags, { Role = "github-evaluation" })
+}
+
+resource "aws_iam_role_policy" "github_evaluation" {
+  count = length(var.github_evaluation_oidc_subjects) > 0 ? 1 : 0
+
+  name   = "${var.name}-github-evaluation"
+  role   = aws_iam_role.github_evaluation[0].id
+  policy = local.github_evaluation_policy
 }

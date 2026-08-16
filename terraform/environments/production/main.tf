@@ -79,6 +79,7 @@ module "iam" {
   github_verification_kms_key_arns     = [module.secrets.kms_key_arn]
   github_oidc_provider_arn             = var.github_oidc_provider_arn
   github_oidc_subjects                 = var.github_oidc_subjects
+  github_evaluation_oidc_subjects      = var.github_evaluation_oidc_subjects
   tags                                 = local.common_tags
 }
 
@@ -163,6 +164,8 @@ module "monitoring" {
   monitor_alternate_target_group         = true
   waf_enabled                            = true
   waf_web_acl_metric_name                = "${replace(local.name, "-", "")}WebAcl"
+  evaluation_monitoring_enabled          = true
+  evaluation_accuracy_threshold          = 0.90
   queue_name                             = module.queue.queue_name
   dead_letter_queue_name                 = module.queue.dead_letter_queue_name
   api_log_group_name                     = module.ecs.api_log_group_name

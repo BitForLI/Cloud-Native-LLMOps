@@ -51,6 +51,7 @@ output "production_safety_profile" {
     waf_log_group              = module.waf.log_group_name
     waf_rate_limit             = module.waf.rate_limit_per_five_minutes
     waf_alarm_name             = module.waf.blocked_request_alarm_name
+    evaluation_alarm_names     = module.monitoring.evaluation_alarm_names
   }
 }
 
@@ -59,6 +60,7 @@ output "deployment_github_variables" {
   value = {
     AWS_ACCOUNT_ID                   = split(":", module.iam.github_deploy_role_arn)[4]
     AWS_DEPLOY_ROLE_ARN              = module.iam.github_deploy_role_arn
+    AWS_EVALUATION_ROLE_ARN          = module.iam.github_evaluation_role_arn
     AWS_REGION                       = var.aws_region
     PRODUCTION_API_ECR_REPOSITORY    = module.api_ecr.repository_name
     PRODUCTION_WORKER_ECR_REPOSITORY = module.worker_ecr.repository_name
@@ -69,5 +71,6 @@ output "deployment_github_variables" {
     CODEDEPLOY_APPLICATION           = module.codedeploy.application_name
     CODEDEPLOY_DEPLOYMENT_GROUP      = module.codedeploy.deployment_group_name
     API_AUTH_SECRET_ID               = module.secrets.api_auth_secret_name
+    ARTIFACT_BUCKET                  = module.database.artifact_bucket_name
   }
 }

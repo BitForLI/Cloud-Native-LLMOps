@@ -74,6 +74,23 @@ variable "waf_web_acl_metric_name" {
   }
 }
 
+variable "evaluation_monitoring_enabled" {
+  description = "Monitor the daily production evaluation gate and alert when it fails or stops reporting."
+  type        = bool
+  default     = false
+}
+
+variable "evaluation_accuracy_threshold" {
+  description = "Minimum acceptable continuous evaluation accuracy ratio."
+  type        = number
+  default     = 0.90
+
+  validation {
+    condition     = var.evaluation_accuracy_threshold > 0 && var.evaluation_accuracy_threshold <= 1
+    error_message = "evaluation_accuracy_threshold must be greater than 0 and at most 1."
+  }
+}
+
 variable "queue_name" {
   description = "Inference queue CloudWatch dimension value."
   type        = string

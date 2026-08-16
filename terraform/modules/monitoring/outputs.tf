@@ -23,6 +23,18 @@ output "alarm_names" {
     values(aws_cloudwatch_metric_alarm.ecs_memory)[*].alarm_name,
     aws_cloudwatch_metric_alarm.alb_alternate_error_rate[*].alarm_name,
     aws_cloudwatch_metric_alarm.alb_alternate_p95_latency[*].alarm_name,
+    aws_cloudwatch_metric_alarm.evaluation_gate[*].alarm_name,
+    aws_cloudwatch_metric_alarm.evaluation_absent[*].alarm_name,
+    aws_cloudwatch_metric_alarm.evaluation_accuracy[*].alarm_name,
+  )
+}
+
+output "evaluation_alarm_names" {
+  description = "Continuous evaluation failure, absence, and accuracy alarms."
+  value = concat(
+    aws_cloudwatch_metric_alarm.evaluation_gate[*].alarm_name,
+    aws_cloudwatch_metric_alarm.evaluation_absent[*].alarm_name,
+    aws_cloudwatch_metric_alarm.evaluation_accuracy[*].alarm_name,
   )
 }
 

@@ -213,3 +213,10 @@ alarms stop traffic shifting and trigger automatic rollback; the old task set
 is retained for a configurable bake window. The production GitHub role can
 copy existing staging manifests but cannot upload container layers, and its
 CodeDeploy permissions are scoped to the single production deployment group.
+
+Production also creates a separate GitHub OIDC role for continuous evaluation.
+It trusts only the exact `production-monitoring` environment subject and may
+read the API verification secret, publish metrics only in
+`CloudNativeLLMOps`, and conditionally create objects only under the artifact
+bucket's `evaluations/` prefix. It has no ECR, ECS, CodeDeploy, or
+`iam:PassRole` permissions.

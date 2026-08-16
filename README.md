@@ -245,6 +245,30 @@ Post-release health, real Bedrock evaluation, cost/latency
 gates, and durable Worker tests run before completion; a later verification
 failure starts a reverse CodeDeploy deployment and restores the prior Worker.
 
+### Continuous production evaluation
+
+`monitor-production-eval.yml` runs the remote evaluation dataset every day at
+03:17 UTC and can also be dispatched manually from `master`. It publishes
+accuracy, P95 latency, estimated cost, and aggregate pass/fail metrics to the
+`CloudNativeLLMOps` namespace. The production dashboard includes those trends;
+the encrypted SNS alarm path reports a failed gate immediately and a missing
+daily evaluation after approximately 30 hours.
+
+Every run stores a prompt-free JSON report under
+`s3://<artifact-bucket>/evaluations/production/YYYY/MM/DD/`. The key contains
+the GitHub run identity and full revision, includes the dataset SHA-256, and is
+written with `If-None-Match: *`, a content checksum, and encryption so reruns
+cannot silently replace evidence.
+
+Create a `production-monitoring` GitHub environment restricted to `master`.
+Do not add a required-reviewer wait to this environment because scheduled
+monitoring must run unattended; keep human approval on the separate
+`production` release environment. Copy `AWS_ACCOUNT_ID`, `AWS_REGION`,
+`AWS_EVALUATION_ROLE_ARN`, `API_URL`, `API_AUTH_SECRET_ID`, and
+`ARTIFACT_BUCKET` from Terraform's `deployment_github_variables` output into
+the monitoring environment. Its dedicated OIDC role cannot push images,
+register task definitions, update ECS, or invoke CodeDeploy.
+
 ## Quality gate defaults
 
 - Exact-response evaluation score: `>= 0.90`

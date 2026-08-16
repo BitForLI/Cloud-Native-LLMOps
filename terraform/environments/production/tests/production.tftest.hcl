@@ -54,7 +54,8 @@ run "resilient_production_defaults" {
       output.production_safety_profile.waf_enabled &&
       startswith(output.production_safety_profile.waf_log_group, "aws-waf-logs-") &&
       output.production_safety_profile.waf_rate_limit == 5000 &&
-      output.production_safety_profile.waf_alarm_name != null
+      output.production_safety_profile.waf_alarm_name != null &&
+      length(output.production_safety_profile.evaluation_alarm_names) == 3
     )
     error_message = "Production must preserve multi-AZ capacity, retention, deletion protection, and two target groups."
   }
@@ -79,7 +80,9 @@ run "resilient_production_defaults" {
       "API_URL",
       "AWS_ACCOUNT_ID",
       "AWS_DEPLOY_ROLE_ARN",
+      "AWS_EVALUATION_ROLE_ARN",
       "AWS_REGION",
+      "ARTIFACT_BUCKET",
       "CODEDEPLOY_APPLICATION",
       "CODEDEPLOY_DEPLOYMENT_GROUP",
       "ECS_CLUSTER",
@@ -167,6 +170,7 @@ run "production_role_cannot_bypass_artifact_or_api_release" {
     github_verification_kms_key_arns = ["arn:aws:kms:ap-southeast-2:123456789012:key/00000000-0000-0000-0000-000000000000"]
     github_oidc_provider_arn         = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
     github_oidc_subjects             = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:environment:production"]
+    github_evaluation_oidc_subjects  = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:environment:production-monitoring"]
   }
 
   assert {
@@ -178,6 +182,17 @@ run "production_role_cannot_bypass_artifact_or_api_release" {
       length([for statement in jsondecode(local.github_deploy_policy).Statement : statement if statement.Sid == "DecryptReleaseVerificationSecret"]) == 1
     )
     error_message = "Production automation may only copy manifests and directly update the Worker service."
+  }
+
+  assert {
+    condition = (
+      length([for statement in jsondecode(local.github_evaluation_policy).Statement : statement if statement.Sid == "PublishEvaluationMetrics" && statement.Condition.StringEquals["cloudwatch:namespace"] == ["CloudNativeLLMOps"]]) == 1 &&
+      one([for statement in jsondecode(local.github_evaluation_policy).Statement : statement if statement.Sid == "WriteImmutableEvaluationEvidence"]).Resource == ["arn:aws:s3:::llmops-production-artifacts/evaluations/*"] &&
+      one([for statement in jsondecode(local.github_evaluation_policy).Statement : statement if statement.Sid == "WriteImmutableEvaluationEvidence"]).Condition.StringEquals["s3:if-none-match"] == ["*"] &&
+      length([for statement in jsondecode(local.github_evaluation_policy).Statement : statement if startswith(statement.Sid, "Read") || startswith(statement.Sid, "Decrypt")]) == 2 &&
+      length([for statement in jsondecode(local.github_evaluation_policy).Statement : statement if can(regex("^(ecr|ecs|codedeploy|iam):", join(" ", statement.Action)))]) == 0
+    )
+    error_message = "Continuous evaluation must have evidence, metric, and token access without deployment permissions."
   }
 }
 
@@ -196,6 +211,14 @@ run "rejects_unprotected_production_identity" {
     github_oidc_subjects = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:ref:refs/heads/master"]
   }
   expect_failures = [var.github_oidc_subjects]
+}
+
+run "rejects_unprotected_evaluation_identity" {
+  command = plan
+  variables {
+    github_evaluation_oidc_subjects = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:ref:refs/heads/master"]
+  }
+  expect_failures = [var.github_evaluation_oidc_subjects]
 }
 
 run "rejects_missing_alarm_recipient" {

@@ -171,6 +171,17 @@ variable "github_oidc_subjects" {
   }
 }
 
+variable "github_evaluation_oidc_subjects" {
+  description = "Exact GitHub OIDC subjects allowed to run read-only production evaluation monitoring."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for subject in var.github_evaluation_oidc_subjects : startswith(subject, "repo:") && !strcontains(subject, "*")])
+    error_message = "github_evaluation_oidc_subjects must contain exact repo: subjects without wildcards."
+  }
+}
+
 variable "tags" {
   description = "Additional resource tags."
   type        = map(string)
