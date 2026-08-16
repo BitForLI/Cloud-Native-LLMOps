@@ -88,3 +88,23 @@ output "deployment_github_variables" {
     ARTIFACT_BUCKET                  = module.database.artifact_bucket_name
   }
 }
+
+output "operations_github_variables" {
+  description = "Non-secret variables for the protected production-operations diagnostics workflow."
+  value = {
+    AWS_ACCOUNT_ID              = split(":", module.operations.role_arn)[4]
+    AWS_OPERATIONS_ROLE_ARN     = module.operations.role_arn
+    AWS_REGION                  = var.aws_region
+    ECS_CLUSTER                 = module.ecs.cluster_name
+    API_ECS_SERVICE             = module.ecs.api_service_name
+    WORKER_ECS_SERVICE          = module.ecs.worker_service_name
+    INFERENCE_QUEUE_URL         = module.queue.queue_url
+    DEAD_LETTER_QUEUE_URL       = module.queue.dead_letter_queue_url
+    ALARM_NAME_PREFIX           = local.name
+    AUDIT_TRAIL_NAME            = module.audit.trail_name
+    BACKUP_VAULT_NAME           = module.backup.vault_name
+    RESTORE_TESTING_PLAN_ARN    = module.backup.restore_testing_plan_arn
+    CODEDEPLOY_APPLICATION      = module.codedeploy.application_name
+    CODEDEPLOY_DEPLOYMENT_GROUP = module.codedeploy.deployment_group_name
+  }
+}

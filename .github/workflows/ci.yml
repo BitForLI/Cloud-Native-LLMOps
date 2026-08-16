@@ -16,7 +16,7 @@ jobs:
       - name: Install API dependencies
         run: pip install -r services/api/requirements-dev.txt ruff pip-audit
       - name: Lint
-        run: ruff check services/api services/common services/worker evals loadtests .github/tests
+        run: ruff check services/api services/common services/worker evals loadtests .github/scripts .github/tests
       - name: Unit tests
         run: PYTHONPATH=services/api pytest services/api/tests services/worker/tests services/common evals loadtests .github/tests
       - name: LLM evaluation quality gate

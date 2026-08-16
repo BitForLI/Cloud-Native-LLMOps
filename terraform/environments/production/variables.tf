@@ -143,6 +143,19 @@ variable "github_evaluation_oidc_subjects" {
   }
 }
 
+variable "github_operations_oidc_subjects" {
+  description = "Exact GitHub OIDC identity for read-only production incident diagnostics."
+  type        = set(string)
+  default     = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:environment:production-operations"]
+
+  validation {
+    condition = length(var.github_operations_oidc_subjects) == 1 && alltrue([
+      for subject in var.github_operations_oidc_subjects : endswith(subject, ":environment:production-operations") && !strcontains(subject, "*")
+    ])
+    error_message = "Production operations must trust exactly one protected production-operations environment identity."
+  }
+}
+
 variable "promotion_source_ecr_repository_arns" {
   description = "Concrete staging ECR repositories permitted as promotion sources."
   type        = set(string)

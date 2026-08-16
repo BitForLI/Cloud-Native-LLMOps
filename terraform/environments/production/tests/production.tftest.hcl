@@ -106,6 +106,101 @@ run "resilient_production_defaults" {
     ])
     error_message = "Production must expose the complete non-secret release configuration."
   }
+
+  assert {
+    condition = toset(keys(output.operations_github_variables)) == toset([
+      "ALARM_NAME_PREFIX",
+      "API_ECS_SERVICE",
+      "AUDIT_TRAIL_NAME",
+      "AWS_ACCOUNT_ID",
+      "AWS_OPERATIONS_ROLE_ARN",
+      "AWS_REGION",
+      "BACKUP_VAULT_NAME",
+      "CODEDEPLOY_APPLICATION",
+      "CODEDEPLOY_DEPLOYMENT_GROUP",
+      "DEAD_LETTER_QUEUE_URL",
+      "ECS_CLUSTER",
+      "INFERENCE_QUEUE_URL",
+      "RESTORE_TESTING_PLAN_ARN",
+      "WORKER_ECS_SERVICE",
+    ])
+    error_message = "Production must expose the complete non-secret incident diagnostics configuration."
+  }
+}
+
+run "operations_role_is_read_only_and_incident_scoped" {
+  command = apply
+
+  module { source = "../../modules/operations" }
+
+  override_data {
+    target = data.aws_partition.current
+    values = { partition = "aws" }
+  }
+
+  override_data {
+    target = data.aws_caller_identity.current
+    values = { account_id = "123456789012" }
+  }
+
+  override_data {
+    target = data.aws_region.current
+    values = { region = "ap-southeast-2" }
+  }
+
+  variables {
+    name                     = "llmops-production"
+    github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+    github_oidc_subjects     = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:environment:production-operations"]
+    ecs_cluster_name         = "llmops-production"
+    ecs_service_names        = ["llmops-production-api", "llmops-production-worker"]
+    queue_arns = [
+      "arn:aws:sqs:ap-southeast-2:123456789012:llmops-production-inference",
+      "arn:aws:sqs:ap-southeast-2:123456789012:llmops-production-inference-dlq",
+    ]
+    alarm_name_prefix               = "llmops-production"
+    cloudtrail_trail_name           = "llmops-production-management"
+    backup_vault_arn                = "arn:aws:backup:ap-southeast-2:123456789012:backup-vault:llmops-production-recovery"
+    codedeploy_deployment_group_arn = "arn:aws:codedeploy:ap-southeast-2:123456789012:deploymentgroup:llmops-production/llmops-production-api"
+  }
+
+  assert {
+    condition = (
+      jsondecode(aws_iam_role.github_operations.assume_role_policy).Statement[0].Principal.Federated == "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com" &&
+      jsondecode(aws_iam_role.github_operations.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:aud"] == "sts.amazonaws.com" &&
+      jsondecode(aws_iam_role.github_operations.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:environment:production-operations"] &&
+      aws_iam_role.github_operations.max_session_duration == 3600
+    )
+    error_message = "Diagnostics must trust only the protected production-operations GitHub environment."
+  }
+
+  assert {
+    condition = (
+      one([for statement in jsondecode(local.diagnostics_policy).Statement : statement if statement.Sid == "DescribeWorkloadServices"]).Resource == [
+        "arn:aws:ecs:ap-southeast-2:123456789012:service/llmops-production/llmops-production-api",
+        "arn:aws:ecs:ap-southeast-2:123456789012:service/llmops-production/llmops-production-worker",
+      ] &&
+      one([for statement in jsondecode(local.diagnostics_policy).Statement : statement if statement.Sid == "ReadQueuePressure"]).Resource == [
+        "arn:aws:sqs:ap-southeast-2:123456789012:llmops-production-inference",
+        "arn:aws:sqs:ap-southeast-2:123456789012:llmops-production-inference-dlq",
+      ] &&
+      one([for statement in jsondecode(local.diagnostics_policy).Statement : statement if statement.Sid == "ReadAuditDeliveryHealth"]).Resource == ["arn:aws:cloudtrail:ap-southeast-2:123456789012:trail/llmops-production-management"] &&
+      one([for statement in jsondecode(local.diagnostics_policy).Statement : statement if statement.Sid == "ReadRecoveryHealth"]).Resource == ["arn:aws:backup:ap-southeast-2:123456789012:backup-vault:llmops-production-recovery"]
+    )
+    error_message = "Diagnostics reads must be scoped to the exact workload services, queues, trail, and recovery vault."
+  }
+
+  assert {
+    condition = (
+      one([for statement in jsondecode(local.diagnostics_policy).Statement : statement if statement.Sid == "DenyMutationAndSensitiveReads"]).Effect == "Deny" &&
+      contains(one([for statement in jsondecode(local.diagnostics_policy).Statement : statement if statement.Sid == "DenyMutationAndSensitiveReads"]).Action, "secretsmanager:GetSecretValue") &&
+      contains(one([for statement in jsondecode(local.diagnostics_policy).Statement : statement if statement.Sid == "DenyMutationAndSensitiveReads"]).Action, "ecs:UpdateService") &&
+      contains(one([for statement in jsondecode(local.diagnostics_policy).Statement : statement if statement.Sid == "DenyMutationAndSensitiveReads"]).Action, "codedeploy:CreateDeployment") &&
+      contains(one([for statement in jsondecode(local.diagnostics_policy).Statement : statement if statement.Sid == "DenyMutationAndSensitiveReads"]).Action, "iam:PassRole") &&
+      length([for statement in jsondecode(local.diagnostics_policy).Statement : statement if statement.Effect == "Allow" && contains(statement.Action, "secretsmanager:GetSecretValue")]) == 0
+    )
+    error_message = "The operations identity must be unable to read secrets, deploy, mutate queues, or start recovery jobs."
+  }
 }
 
 run "backups_are_locked_scoped_and_restore_tested" {
@@ -442,6 +537,14 @@ run "rejects_unprotected_evaluation_identity" {
     github_evaluation_oidc_subjects = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:ref:refs/heads/master"]
   }
   expect_failures = [var.github_evaluation_oidc_subjects]
+}
+
+run "rejects_unprotected_operations_identity" {
+  command = plan
+  variables {
+    github_operations_oidc_subjects = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:ref:refs/heads/master"]
+  }
+  expect_failures = [var.github_operations_oidc_subjects]
 }
 
 run "rejects_missing_alarm_recipient" {

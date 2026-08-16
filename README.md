@@ -112,6 +112,20 @@ snapshots through a separate restore role. Its one-hour validation window is a
 repeatable recovery-drill entry point; operations must review failed tests and
 verify completion of temporary-resource cleanup.
 
+### Incident diagnostics and runbooks
+
+`diagnose-production.yml` collects a prompt-free control-plane snapshot for a
+bounded incident window: ECS rollout/capacity, workload alarms, inference and
+dead-letter queues, CloudTrail delivery, backup/restore jobs, and the
+CodeDeploy group. It runs only through the exact protected
+`production-operations` OIDC subject and retains the JSON artifact for 30 days.
+
+The operations role is intentionally unable to read Secrets Manager, execute a
+container shell, update ECS, start/stop CodeDeploy, mutate queues, pass roles,
+or start/delete backup operations. Diagnosis and recovery authority remain
+separate. Operational procedures for deployment regression, queue backlog,
+Bedrock degradation, and restore-test failure live in `docs/runbooks/`.
+
 OpenTelemetry instruments FastAPI and botocore calls. API and Worker task
 definitions each include an essential, version-pinned AWS Distro for
 OpenTelemetry Collector sidecar. Applications send OTLP/gRPC only to

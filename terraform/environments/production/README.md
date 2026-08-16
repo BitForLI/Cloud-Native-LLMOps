@@ -24,6 +24,7 @@ terraform -chdir=terraform/environments/production init -backend-config=backend.
 terraform -chdir=terraform/environments/production plan
 terraform -chdir=terraform/environments/production apply
 terraform -chdir=terraform/environments/production output -json deployment_github_variables
+terraform -chdir=terraform/environments/production output -json operations_github_variables
 ```
 
 Set `monthly_budget_limit_usd` and
@@ -59,3 +60,11 @@ Put the output values plus `STAGING_API_ECR_REPOSITORY` and
 `STAGING_WORKER_ECR_REPOSITORY` in the protected GitHub `production`
 environment. Require reviewers, prevent self-review, enforce deployment from
 `master` only, and confirm every SNS email subscription before releasing.
+
+Create a separate `production-operations` GitHub environment restricted to
+`master` and trusted incident responders. Populate it only from
+`operations_github_variables`. Its dedicated OIDC role is read-only and cannot
+retrieve the API secret or mutate production. Run `Diagnose Production
+Incident` with a non-secret incident ID, retain its artifact in the incident
+record, and follow the procedures in `docs/runbooks/` for any approved recovery
+action.

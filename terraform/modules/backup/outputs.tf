@@ -33,6 +33,11 @@ output "restore_testing_plan_name" {
   value       = try(aws_backup_restore_testing_plan.this[0].name, null)
 }
 
+output "restore_testing_plan_arn" {
+  description = "Monthly restore testing plan ARN, or null when disabled."
+  value       = try(aws_backup_restore_testing_plan.this[0].arn, null)
+}
+
 output "retention_days" {
   description = "Retention and vault-lock limits."
   value = {

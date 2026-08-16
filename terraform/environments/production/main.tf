@@ -247,6 +247,22 @@ module "codedeploy" {
   tags                          = local.common_tags
 }
 
+module "operations" {
+  source = "../../modules/operations"
+
+  name                            = local.name
+  github_oidc_provider_arn        = var.github_oidc_provider_arn
+  github_oidc_subjects            = var.github_operations_oidc_subjects
+  ecs_cluster_name                = module.ecs.cluster_name
+  ecs_service_names               = [module.ecs.api_service_name, module.ecs.worker_service_name]
+  queue_arns                      = [module.queue.queue_arn, module.queue.dead_letter_queue_arn]
+  alarm_name_prefix               = local.name
+  cloudtrail_trail_name           = module.audit.trail_name
+  backup_vault_arn                = module.backup.vault_arn
+  codedeploy_deployment_group_arn = module.codedeploy.deployment_group_arn
+  tags                            = local.common_tags
+}
+
 resource "aws_iam_role_policy" "production_codedeploy" {
   name = "${local.name}-codedeploy-release"
   role = module.iam.github_deploy_role_name

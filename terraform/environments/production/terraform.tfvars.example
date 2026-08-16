@@ -4,6 +4,7 @@ vpc_cidr                = "10.40.0.0/16"
 availability_zone_count = 3
 
 github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+# github_operations_oidc_subjects defaults to the exact protected production-operations environment.
 promotion_source_ecr_repository_arns = [
   "arn:aws:ecr:ap-southeast-2:123456789012:repository/cloud-native-llmops/staging/api",
   "arn:aws:ecr:ap-southeast-2:123456789012:repository/cloud-native-llmops/staging/worker",

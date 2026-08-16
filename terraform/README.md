@@ -27,6 +27,7 @@ creates the foundation needed by later ECS work:
 - regional AWS WAF managed rules, per-IP throttling, redacted blocked-request logs, and alarms.
 - a customer-KMS-encrypted AWS Backup vault with governance retention lock;
 - daily/weekly S3 and DynamoDB snapshots plus monthly automated restore tests.
+- an exact-subject, read-only production incident-diagnostics OIDC role.
 
 The dev default uses one NAT gateway to control cost. Production should use
 `per_az` for zone-independent egress. NAT gateways incur hourly and data
@@ -255,3 +256,17 @@ DynamoDB with a one-hour validation window. Treat the AWS Backup restore-test
 history as the recovery drill record; investigate failures and confirm that
 temporary S3 resources finish cleanup. Both retained recovery points and
 restore drills incur service charges.
+
+## Read-only incident diagnostics
+
+The production `operations` module creates a separate GitHub OIDC identity for
+the protected `production-operations` environment. It can describe only the
+workload's ECS services, alarm prefix, two queues, management trail, recovery
+vault/jobs, and CodeDeploy group. Unsupported resource-scoped list calls are
+limited to read-only AWS Backup job metadata.
+
+An explicit deny blocks secret retrieval, ECS/CodeDeploy mutation, remote
+shells, queue mutation, backup starts/deletion, and `iam:PassRole`. Populate the
+workflow environment from `operations_github_variables`; do not reuse the
+deployment or evaluation role. The collector returns non-zero if any probe
+fails but still writes partial diagnostic evidence for investigation.
