@@ -69,7 +69,11 @@ run "resilient_production_defaults" {
       output.production_safety_profile.backup_plan_name == "cloud-native-llmops-prod-data-protection" &&
       output.production_safety_profile.backup_retention_days.daily == 35 &&
       output.production_safety_profile.backup_retention_days.weekly == 365 &&
-      output.production_safety_profile.restore_testing_plan_name == "cloud_native_llmops_prod_monthly_restore"
+      output.production_safety_profile.restore_testing_plan_name == "cloud_native_llmops_prod_monthly_restore" &&
+      output.production_safety_profile.slo_availability_target == 99.9 &&
+      output.production_safety_profile.slo_latency_compliance == 99 &&
+      output.production_safety_profile.slo_window_hours == 168 &&
+      output.production_safety_profile.slo_minimum_requests == 100
     )
     error_message = "Production must preserve multi-AZ capacity, retention, deletion protection, and two target groups."
   }
@@ -103,6 +107,13 @@ run "resilient_production_defaults" {
       "PRODUCTION_API_ECR_REPOSITORY",
       "PRODUCTION_WORKER_ECR_REPOSITORY",
       "WORKER_ECS_SERVICE",
+      "ALB_LOAD_BALANCER_SUFFIX",
+      "ALB_TARGET_GROUP_SUFFIX",
+      "SLO_AVAILABILITY_TARGET_PERCENT",
+      "SLO_LATENCY_TARGET_MS",
+      "SLO_LATENCY_COMPLIANCE_PERCENT",
+      "SLO_WINDOW_HOURS",
+      "SLO_MINIMUM_REQUESTS",
     ])
     error_message = "Production must expose the complete non-secret release configuration."
   }
@@ -125,6 +136,20 @@ run "resilient_production_defaults" {
       "WORKER_ECS_SERVICE",
     ])
     error_message = "Production must expose the complete non-secret incident diagnostics configuration."
+  }
+}
+
+run "release_role_can_only_read_slo_metrics" {
+  command = plan
+
+  assert {
+    condition = (
+      jsondecode(aws_iam_role_policy.production_error_budget.policy).Statement[0].Action == ["cloudwatch:GetMetricData"] &&
+      jsondecode(aws_iam_role_policy.production_error_budget.policy).Statement[0].Resource == "*" &&
+      !strcontains(aws_iam_role_policy.production_error_budget.policy, "PutMetricData") &&
+      !strcontains(aws_iam_role_policy.production_error_budget.policy, "DeleteAlarms")
+    )
+    error_message = "The release role must have read-only access to the exact SLO metric API."
   }
 }
 

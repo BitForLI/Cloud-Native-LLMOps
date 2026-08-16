@@ -66,6 +66,10 @@ output "production_safety_profile" {
     backup_retention_days      = module.backup.retention_days
     protected_resource_arns    = module.backup.protected_resource_arns
     restore_testing_plan_name  = module.backup.restore_testing_plan_name
+    slo_availability_target    = var.slo_availability_target_percent
+    slo_latency_compliance     = var.slo_latency_compliance_target_percent
+    slo_window_hours           = var.slo_window_hours
+    slo_minimum_requests       = var.slo_minimum_requests
   }
 }
 
@@ -86,6 +90,13 @@ output "deployment_github_variables" {
     CODEDEPLOY_DEPLOYMENT_GROUP      = module.codedeploy.deployment_group_name
     API_AUTH_SECRET_ID               = module.secrets.api_auth_secret_name
     ARTIFACT_BUCKET                  = module.database.artifact_bucket_name
+    ALB_LOAD_BALANCER_SUFFIX         = module.alb.load_balancer_arn_suffix
+    ALB_TARGET_GROUP_SUFFIX          = module.alb.api_target_group_arn_suffix
+    SLO_AVAILABILITY_TARGET_PERCENT  = tostring(var.slo_availability_target_percent)
+    SLO_LATENCY_TARGET_MS            = tostring(var.alarm_p95_latency_threshold_ms)
+    SLO_LATENCY_COMPLIANCE_PERCENT   = tostring(var.slo_latency_compliance_target_percent)
+    SLO_WINDOW_HOURS                 = tostring(var.slo_window_hours)
+    SLO_MINIMUM_REQUESTS             = tostring(var.slo_minimum_requests)
   }
 }
 

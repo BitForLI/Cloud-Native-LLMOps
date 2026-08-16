@@ -280,3 +280,17 @@ resource "aws_iam_role_policy" "production_codedeploy" {
     }]
   })
 }
+
+resource "aws_iam_role_policy" "production_error_budget" {
+  name = "${local.name}-error-budget-read"
+  role = module.iam.github_deploy_role_name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "ReadReleaseSLOMetrics"
+      Effect   = "Allow"
+      Action   = ["cloudwatch:GetMetricData"]
+      Resource = "*"
+    }]
+  })
+}

@@ -43,6 +43,13 @@ jobs:
       CODEDEPLOY_APPLICATION: ${{ vars.CODEDEPLOY_APPLICATION }}
       CODEDEPLOY_DEPLOYMENT_GROUP: ${{ vars.CODEDEPLOY_DEPLOYMENT_GROUP }}
       IMAGE_TAG: ${{ inputs.image_tag }}
+      ALB_LOAD_BALANCER_SUFFIX: ${{ vars.ALB_LOAD_BALANCER_SUFFIX }}
+      ALB_TARGET_GROUP_SUFFIX: ${{ vars.ALB_TARGET_GROUP_SUFFIX }}
+      SLO_AVAILABILITY_TARGET_PERCENT: ${{ vars.SLO_AVAILABILITY_TARGET_PERCENT }}
+      SLO_LATENCY_TARGET_MS: ${{ vars.SLO_LATENCY_TARGET_MS }}
+      SLO_LATENCY_COMPLIANCE_PERCENT: ${{ vars.SLO_LATENCY_COMPLIANCE_PERCENT }}
+      SLO_WINDOW_HOURS: ${{ vars.SLO_WINDOW_HOURS }}
+      SLO_MINIMUM_REQUESTS: ${{ vars.SLO_MINIMUM_REQUESTS }}
 
     steps:
       - name: Validate immutable release revision
@@ -80,6 +87,38 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
           unset-current-credentials: true
+
+      - name: Set up Python for the SLO gate
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned CloudWatch client
+        run: python -m pip install boto3==1.43.55
+
+      - name: Enforce rolling production error budget
+        shell: bash
+        run: |
+          python .github/scripts/check_error_budget.py \
+            --region "$AWS_REGION" \
+            --load-balancer-suffix "$ALB_LOAD_BALANCER_SUFFIX" \
+            --target-group-suffix "$ALB_TARGET_GROUP_SUFFIX" \
+            --window-hours "$SLO_WINDOW_HOURS" \
+            --period-seconds 300 \
+            --availability-target-percent "$SLO_AVAILABILITY_TARGET_PERCENT" \
+            --latency-target-ms "$SLO_LATENCY_TARGET_MS" \
+            --latency-compliance-target-percent "$SLO_LATENCY_COMPLIANCE_PERCENT" \
+            --minimum-requests "$SLO_MINIMUM_REQUESTS" \
+            --output artifacts/production-error-budget.json
+
+      - name: Retain production error-budget evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-error-budget-${{ inputs.image_tag }}
+          path: artifacts/production-error-budget.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Promote artifacts and execute production canary
         shell: bash

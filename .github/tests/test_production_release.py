@@ -83,4 +83,34 @@ def test_release_configuration_is_complete():
         "CODEDEPLOY_APPLICATION",
         "CODEDEPLOY_DEPLOYMENT_GROUP",
         "IMAGE_TAG",
+        "ALB_LOAD_BALANCER_SUFFIX",
+        "ALB_TARGET_GROUP_SUFFIX",
+        "SLO_AVAILABILITY_TARGET_PERCENT",
+        "SLO_LATENCY_TARGET_MS",
+        "SLO_LATENCY_COMPLIANCE_PERCENT",
+        "SLO_WINDOW_HOURS",
+        "SLO_MINIMUM_REQUESTS",
     }.issubset(environment)
+
+
+def test_release_enforces_and_retains_rolling_error_budget_before_deploying():
+    steps = load_workflow()["jobs"]["release"]["steps"]
+    names = [step["name"] for step in steps]
+    gate = steps[names.index("Enforce rolling production error budget")]
+    evidence = steps[names.index("Retain production error-budget evidence")]
+
+    assert names.index("Enforce rolling production error budget") < names.index(
+        "Promote artifacts and execute production canary"
+    )
+    for argument in (
+        "--load-balancer-suffix",
+        "--target-group-suffix",
+        "--availability-target-percent",
+        "--latency-compliance-target-percent",
+        "--minimum-requests",
+        "--output artifacts/production-error-budget.json",
+    ):
+        assert argument in gate["run"]
+    assert evidence["if"] == "always()"
+    assert evidence["with"]["if-no-files-found"] == "error"
+    assert evidence["with"]["retention-days"] == "90"

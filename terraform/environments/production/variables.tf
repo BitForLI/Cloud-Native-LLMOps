@@ -332,6 +332,50 @@ variable "alarm_p95_latency_threshold_ms" {
   default     = 3000
 }
 
+variable "slo_availability_target_percent" {
+  description = "Rolling production availability objective enforced before a release."
+  type        = number
+  default     = 99.9
+
+  validation {
+    condition     = var.slo_availability_target_percent >= 99 && var.slo_availability_target_percent < 100
+    error_message = "slo_availability_target_percent must be at least 99 and less than 100."
+  }
+}
+
+variable "slo_latency_compliance_target_percent" {
+  description = "Required percentage of populated periods whose ALB P95 remains within the latency objective."
+  type        = number
+  default     = 99
+
+  validation {
+    condition     = var.slo_latency_compliance_target_percent >= 95 && var.slo_latency_compliance_target_percent < 100
+    error_message = "slo_latency_compliance_target_percent must be at least 95 and less than 100."
+  }
+}
+
+variable "slo_window_hours" {
+  description = "Rolling production observation window used by the release error-budget gate."
+  type        = number
+  default     = 168
+
+  validation {
+    condition     = var.slo_window_hours >= 24 && var.slo_window_hours <= 720 && floor(var.slo_window_hours) == var.slo_window_hours
+    error_message = "slo_window_hours must be a whole number from 24 through 720."
+  }
+}
+
+variable "slo_minimum_requests" {
+  description = "Minimum production requests required to make a release decision."
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.slo_minimum_requests >= 1 && floor(var.slo_minimum_requests) == var.slo_minimum_requests
+    error_message = "slo_minimum_requests must be a positive integer."
+  }
+}
+
 variable "alarm_queue_age_threshold_seconds" {
   description = "Maximum age of pending production inference work."
   type        = number

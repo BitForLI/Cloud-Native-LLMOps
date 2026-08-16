@@ -21,6 +21,9 @@ remote shell access, deployments, queue mutation, and backup/restore changes.
    queue depth, CloudTrail delivery, CodeDeploy state, and recovery jobs.
 4. Select the specialized runbook matching the dominant failure mode.
 
+For a release blocked by rolling SLO data, follow
+[`error-budget-exhaustion.md`](error-budget-exhaustion.md).
+
 ## Containment
 
 - Freeze production releases until an incident commander declares the release

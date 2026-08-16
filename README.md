@@ -311,6 +311,15 @@ layers—then updates the
 headless Worker with its ECS circuit breaker and releases the API through
 CodeDeploy blue/green.
 
+Before touching ECS or ECR, the workflow also reads seven days of production
+ALB telemetry through narrowly scoped OIDC credentials. The fail-closed SLO
+gate requires at least 100 requests, 99.9% availability budget remaining, and
+99% of populated five-minute periods to keep P95 target latency at or below
+three seconds. Target and load-balancer 5xx both consume the availability
+budget. Its prompt-free JSON decision record is retained for 90 days; exhausted
+budgets or insufficient observations freeze the release and route operators to
+the error-budget runbook.
+
 The ALB runs two target groups. CodeDeploy shifts 10% of production traffic to
 green for five minutes, watches focused API/LLM/compute CloudWatch alarms, then
 shifts the remaining 90%. An alarm or deployment failure automatically returns
