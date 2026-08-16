@@ -36,6 +36,9 @@ def test_release_requires_successful_staging_and_pins_actions():
     assert "promote-staging.yml/runs" in scripts
     assert "Promote Staging ${IMAGE_TAG}" in scripts
     assert "Staging promotion job did not succeed" in scripts
+    assert "performance-staging.yml/runs" in scripts
+    assert "Staging Performance ${IMAGE_TAG}" in scripts
+    assert "Staging performance job did not succeed" in scripts
     assert actions and all(re.search(r"@[0-9a-f]{40}$", action) for action in actions)
 
 

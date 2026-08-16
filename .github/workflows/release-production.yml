@@ -57,7 +57,7 @@ jobs:
           ref: ${{ inputs.image_tag }}
           persist-credentials: false
 
-      - name: Require successful staging promotion
+      - name: Require successful staging gates
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -67,6 +67,10 @@ jobs:
           [[ -n "$staging_run_id" ]] || { echo "No successful staging promotion found for ${IMAGE_TAG}" >&2; exit 1; }
           successful_promotion_jobs=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${staging_run_id}/jobs" --jq '[.jobs[] | select(.name == "promote" and .conclusion == "success")] | length')
           [[ "$successful_promotion_jobs" -eq 1 ]] || { echo "Staging promotion job did not succeed for ${IMAGE_TAG}" >&2; exit 1; }
+          performance_run_id=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/performance-staging.yml/runs" -f branch=master -f event=workflow_dispatch -f status=success -f per_page=100 --jq ".workflow_runs | map(select(.display_title == \"Staging Performance ${IMAGE_TAG}\")) | first | .id // empty")
+          [[ -n "$performance_run_id" ]] || { echo "No successful staging performance gate found for ${IMAGE_TAG}" >&2; exit 1; }
+          successful_performance_jobs=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${performance_run_id}/jobs" --jq '[.jobs[] | select(.name == "performance" and .conclusion == "success")] | length')
+          [[ "$successful_performance_jobs" -eq 1 ]] || { echo "Staging performance job did not succeed for ${IMAGE_TAG}" >&2; exit 1; }
 
       - name: Configure short-lived production credentials
         uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0

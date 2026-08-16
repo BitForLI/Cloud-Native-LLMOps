@@ -227,7 +227,7 @@ Terraform inputs.
 
 1. PR: format/lint, unit tests, evaluation quality gate, dependency security scan.
 2. `main`: build and tag an immutable image, push to ECR, deploy to development.
-3. Promotion: staging integration/eval checks precede production.
+3. Promotion: staging integration, evaluation, and performance gates precede production.
 4. Production: ECS blue/green deployment validates health and alarms; a failed deployment keeps or restores the prior task set.
 
 ### Development continuous delivery
@@ -270,12 +270,30 @@ two dev source repositories.
 The GitHub environment must require reviewers and restrict deployments to
 `master`; the workflow also rejects dispatches from other refs.
 
+### Staging performance gate
+
+`performance-staging.yml` provides a serialized, reviewer-protected manual
+capacity gate for an exact revision already promoted to staging. It verifies
+the successful promotion record, confirms that ECS still runs that SHA, checks
+health/readiness, then retrieves the API token through short-lived AWS OIDC
+credentials. No static credential or token is stored in GitHub.
+
+The bounded load generator exercises authenticated `/v1/generate` traffic at
+the requested fixed rate and concurrency. By default it requires at most 1%
+errors, P95 client latency at most 3 seconds, and at least 90% of target
+throughput. Its retained JSON artifact contains aggregate measurements only—no
+prompt, response, or API key. Duration, rate, and concurrency are validated to
+prevent accidental unbounded tests; Bedrock requests still incur AWS charges.
+Production release refuses that SHA until both its staging promotion and its
+staging performance job have completed successfully.
+
 ### Production canary release
 
 `release-production.yml` requires the exact SHA to have a successful,
-non-skipped staging promotion and then pauses at the protected `production`
-GitHub environment for reviewer approval. It promotes the same scanned ECR
-manifests—production IAM cannot upload new image layers—then updates the
+non-skipped staging promotion and performance gate, then pauses at the
+protected `production` GitHub environment for reviewer approval. It promotes
+the same scanned ECR manifests—production IAM cannot upload new image
+layers—then updates the
 headless Worker with its ECS circuit breaker and releases the API through
 CodeDeploy blue/green.
 

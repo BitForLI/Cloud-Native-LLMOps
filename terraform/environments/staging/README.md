@@ -39,3 +39,10 @@ Configure required reviewers and a deployment-branch rule allowing only
 `master`; the workflow independently rejects dispatches from any other ref.
 `API_AUTH_SECRET_ID` is a non-secret identifier. The scoped OIDC role retrieves
 and masks its value only while release verification is running.
+
+The same protected environment drives `performance-staging.yml`. Supply the
+full promoted commit SHA and deliberate duration, rate, and concurrency values.
+The workflow refuses stale revisions by comparing the live API task-definition
+image tag with that SHA, then applies the 1% error, 3-second P95, and 90%
+throughput gates. Start with two requests per second and raise load only after
+reviewing Bedrock quotas, autoscaling ceilings, and expected cost.
