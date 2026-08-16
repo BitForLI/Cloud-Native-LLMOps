@@ -26,6 +26,8 @@ For a release blocked by rolling SLO data, follow
 For an unsigned image, missing SBOM, identity mismatch, or signing-service
 failure, follow
 [`supply-chain-verification-failure.md`](supply-chain-verification-failure.md).
+For a non-empty Terraform plan, missed audit, or backend inspection failure,
+follow [`infrastructure-drift.md`](infrastructure-drift.md).
 
 ## Containment
 

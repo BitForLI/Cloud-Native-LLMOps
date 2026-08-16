@@ -70,6 +70,22 @@ output "production_safety_profile" {
     slo_latency_compliance     = var.slo_latency_compliance_target_percent
     slo_window_hours           = var.slo_window_hours
     slo_minimum_requests       = var.slo_minimum_requests
+    drift_alarm_names = [
+      aws_cloudwatch_metric_alarm.infrastructure_drift.alarm_name,
+      aws_cloudwatch_metric_alarm.infrastructure_drift_absent.alarm_name,
+    ]
+    drift_role_name = module.drift_detection.role_name
+  }
+}
+
+output "drift_github_variables" {
+  description = "Non-secret variables for the protected production-drift environment."
+  value = {
+    AWS_ACCOUNT_ID     = split(":", module.drift_detection.role_arn)[4]
+    AWS_DRIFT_ROLE_ARN = module.drift_detection.role_arn
+    AWS_REGION         = var.aws_region
+    TF_BACKEND_BUCKET  = module.drift_detection.state_bucket
+    TF_BACKEND_KEY     = module.drift_detection.state_key
   }
 }
 

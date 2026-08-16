@@ -130,6 +130,52 @@ variable "github_oidc_subjects" {
   }
 }
 
+variable "github_drift_oidc_subjects" {
+  description = "Exact GitHub production-drift environment subject."
+  type        = set(string)
+  default     = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:environment:production-drift"]
+
+  validation {
+    condition = length(var.github_drift_oidc_subjects) == 1 && alltrue([
+      for subject in var.github_drift_oidc_subjects : endswith(subject, ":environment:production-drift") && !strcontains(subject, "*")
+    ])
+    error_message = "Production drift detection requires one exact environment:production-drift OIDC subject."
+  }
+}
+
+variable "terraform_state_bucket_arn" {
+  description = "S3 bucket ARN containing the production Terraform state."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:[^:]+:s3:::[^*]+$", var.terraform_state_bucket_arn))
+    error_message = "terraform_state_bucket_arn must identify one concrete S3 bucket."
+  }
+}
+
+variable "terraform_state_key" {
+  description = "Exact production Terraform state object key."
+  type        = string
+  default     = "cloud-native-llmops/production/terraform.tfstate"
+
+  validation {
+    condition     = length(trimspace(var.terraform_state_key)) > 0 && !startswith(var.terraform_state_key, "/") && !strcontains(var.terraform_state_key, "..") && !strcontains(var.terraform_state_key, "*")
+    error_message = "terraform_state_key must be a concrete relative object key."
+  }
+}
+
+variable "terraform_state_kms_key_arn" {
+  description = "Optional customer-managed KMS key encrypting production Terraform state."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.terraform_state_kms_key_arn == null || can(regex("^arn:[^:]+:kms:[^:]+:[0-9]{12}:key/[^*]+$", var.terraform_state_kms_key_arn))
+    error_message = "terraform_state_kms_key_arn must be a concrete KMS key ARN."
+  }
+}
+
 variable "github_evaluation_oidc_subjects" {
   description = "Exact GitHub OIDC identity for the non-deployment production monitoring environment."
   type        = set(string)

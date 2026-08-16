@@ -340,6 +340,25 @@ Operational response is documented in the
 runbook; signing-service outages freeze new releases without affecting the
 already digest-pinned tasks.
 
+### Infrastructure drift and policy evidence
+
+`drift-production.yml` runs every day and on demand in the protected
+`production-drift` environment. A dedicated OIDC role can read exactly one
+Terraform state object plus control-plane configuration; it cannot lock or write
+state, mutate infrastructure, read application secrets, inspect DynamoDB items,
+or retrieve Parameter Store values; its only write is the constrained drift
+metric. The workflow uses `terraform plan -detailed-exitcode`
+with locking disabled and treats a non-empty plan or audit error as failure.
+
+Policy-as-code classifies deletion/replacement, identity, network, secret, and
+data-protection changes. Raw state, raw plans, and before/after values remain
+ephemeral; the retained 90-day JSON contains only addresses, action types, and
+classifications. A binary CloudWatch metric drives the encrypted production SNS
+alarm, while five missing six-hour heartbeat periods detect a missed audit after
+approximately 30 hours without daily boundary false positives. Recovery follows the
+[`infrastructure-drift`](docs/runbooks/infrastructure-drift.md) runbook and never
+auto-applies an unreviewed plan.
+
 The ALB runs two target groups. CodeDeploy shifts 10% of production traffic to
 green for five minutes, watches focused API/LLM/compute CloudWatch alarms, then
 shifts the remaining 90%. An alarm or deployment failure automatically returns

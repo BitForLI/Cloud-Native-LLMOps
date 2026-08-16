@@ -8,6 +8,11 @@ output "archive_bucket_name" {
   value       = aws_s3_bucket.audit.id
 }
 
+output "archive_bucket_arn" {
+  description = "ARN of the private bucket containing validated audit archives."
+  value       = aws_s3_bucket.audit.arn
+}
+
 output "log_group_name" {
   description = "CloudWatch Logs group used for near-real-time detections."
   value       = aws_cloudwatch_log_group.audit.name

@@ -264,6 +264,55 @@ module "operations" {
   tags                            = local.common_tags
 }
 
+module "drift_detection" {
+  source = "../../modules/drift_detection"
+
+  name                        = local.name
+  github_oidc_provider_arn    = var.github_oidc_provider_arn
+  github_oidc_subjects        = var.github_drift_oidc_subjects
+  terraform_state_bucket_arn  = var.terraform_state_bucket_arn
+  terraform_state_key         = var.terraform_state_key
+  terraform_state_kms_key_arn = var.terraform_state_kms_key_arn
+  managed_s3_bucket_arns      = [module.database.artifact_bucket_arn, module.audit.archive_bucket_arn]
+  tags                        = local.common_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "infrastructure_drift" {
+  alarm_name          = "${local.name}-infrastructure-drift"
+  alarm_description   = "Production Terraform drift or audit failure was detected."
+  namespace           = "CloudNativeLLMOps"
+  metric_name         = "InfrastructureDriftDetected"
+  dimensions          = { Environment = var.environment }
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 1
+  datapoints_to_alarm = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  threshold           = 1
+  treat_missing_data  = "ignore"
+  alarm_actions       = [module.monitoring.alarm_topic_arn]
+  ok_actions          = [module.monitoring.alarm_topic_arn]
+  tags                = local.common_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "infrastructure_drift_absent" {
+  alarm_name          = "${local.name}-infrastructure-drift-audit-absent"
+  alarm_description   = "Production Terraform drift audit heartbeat has been absent for approximately 30 hours."
+  namespace           = "CloudNativeLLMOps"
+  metric_name         = "InfrastructureDriftAuditHeartbeat"
+  dimensions          = { Environment = var.environment }
+  statistic           = "Maximum"
+  period              = 21600
+  evaluation_periods  = 5
+  datapoints_to_alarm = 5
+  comparison_operator = "LessThanThreshold"
+  threshold           = 1
+  treat_missing_data  = "breaching"
+  alarm_actions       = [module.monitoring.alarm_topic_arn]
+  ok_actions          = [module.monitoring.alarm_topic_arn]
+  tags                = local.common_tags
+}
+
 resource "aws_iam_role_policy" "production_codedeploy" {
   name = "${local.name}-codedeploy-release"
   role = module.iam.github_deploy_role_name

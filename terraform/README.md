@@ -69,6 +69,14 @@ The S3 backend uses native lockfiles and encryption. AWS credentials come from
 the standard provider chain locally and from GitHub OIDC in CI/CD; static access
 keys do not belong in Terraform files.
 
+Production also provisions a separate `production-drift` OIDC role. Its daily
+workflow initializes this exact backend but runs plans with `-lock=false`. Copy
+the `drift_github_variables` output into the protected GitHub environment and
+store the complete production `.tfvars` object as the
+`PRODUCTION_TFVARS_JSON` environment secret. This secret is desired
+configuration, not AWS credentials; using one canonical JSON object prevents a
+partial audit from comparing production against defaults.
+
 ## Durable job boundary
 
 Infrastructure now exposes the SQS queue URL, DynamoDB table name, and S3

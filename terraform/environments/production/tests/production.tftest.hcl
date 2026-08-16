@@ -26,8 +26,9 @@ variables {
     "arn:aws:ecr:ap-southeast-2:123456789012:repository/cloud-native-llmops/staging/api",
     "arn:aws:ecr:ap-southeast-2:123456789012:repository/cloud-native-llmops/staging/worker",
   ]
-  alb_certificate_arn       = "arn:aws:acm:ap-southeast-2:123456789012:certificate/00000000-0000-0000-0000-000000000000"
-  alarm_notification_emails = ["platform@example.com"]
+  alb_certificate_arn        = "arn:aws:acm:ap-southeast-2:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+  terraform_state_bucket_arn = "arn:aws:s3:::llmops-production-terraform-state"
+  alarm_notification_emails  = ["platform@example.com"]
 }
 
 run "resilient_production_defaults" {
@@ -73,7 +74,9 @@ run "resilient_production_defaults" {
       output.production_safety_profile.slo_availability_target == 99.9 &&
       output.production_safety_profile.slo_latency_compliance == 99 &&
       output.production_safety_profile.slo_window_hours == 168 &&
-      output.production_safety_profile.slo_minimum_requests == 100
+      output.production_safety_profile.slo_minimum_requests == 100 &&
+      output.production_safety_profile.drift_alarm_names == ["cloud-native-llmops-prod-infrastructure-drift", "cloud-native-llmops-prod-infrastructure-drift-audit-absent"] &&
+      output.production_safety_profile.drift_role_name == "cloud-native-llmops-prod-github-drift"
     )
     error_message = "Production must preserve multi-AZ capacity, retention, deletion protection, and two target groups."
   }
@@ -84,6 +87,23 @@ run "resilient_production_defaults" {
       output.production_safety_profile.blue_termination_wait >= 5
     )
     error_message = "Production must keep a 10 percent canary and a blue bake window."
+  }
+
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.infrastructure_drift.namespace == "CloudNativeLLMOps" &&
+      aws_cloudwatch_metric_alarm.infrastructure_drift.metric_name == "InfrastructureDriftDetected" &&
+      aws_cloudwatch_metric_alarm.infrastructure_drift.period == 300 &&
+      aws_cloudwatch_metric_alarm.infrastructure_drift.treat_missing_data == "ignore" &&
+      length(aws_cloudwatch_metric_alarm.infrastructure_drift.alarm_actions) == 1 &&
+      length(aws_cloudwatch_metric_alarm.infrastructure_drift.ok_actions) == 1 &&
+      aws_cloudwatch_metric_alarm.infrastructure_drift_absent.metric_name == "InfrastructureDriftAuditHeartbeat" &&
+      aws_cloudwatch_metric_alarm.infrastructure_drift_absent.period == 21600 &&
+      aws_cloudwatch_metric_alarm.infrastructure_drift_absent.evaluation_periods == 5 &&
+      aws_cloudwatch_metric_alarm.infrastructure_drift_absent.datapoints_to_alarm == 5 &&
+      aws_cloudwatch_metric_alarm.infrastructure_drift_absent.treat_missing_data == "breaching"
+    )
+    error_message = "Daily drift and missing audits must alarm through the encrypted production topic."
   }
 
   assert {
@@ -136,6 +156,57 @@ run "resilient_production_defaults" {
       "WORKER_ECS_SERVICE",
     ])
     error_message = "Production must expose the complete non-secret incident diagnostics configuration."
+  }
+
+  assert {
+    condition = toset(keys(output.drift_github_variables)) == toset([
+      "AWS_ACCOUNT_ID",
+      "AWS_DRIFT_ROLE_ARN",
+      "AWS_REGION",
+      "TF_BACKEND_BUCKET",
+      "TF_BACKEND_KEY",
+    ])
+    error_message = "Production must expose the complete non-secret drift-audit configuration."
+  }
+}
+
+run "drift_role_reads_state_and_configuration_without_sensitive_data" {
+  command = apply
+
+  module { source = "../../modules/drift_detection" }
+
+  variables {
+    name                        = "llmops-production"
+    github_oidc_provider_arn    = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+    github_oidc_subjects        = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:environment:production-drift"]
+    terraform_state_bucket_arn  = "arn:aws:s3:::llmops-production-terraform-state"
+    terraform_state_key         = "cloud-native-llmops/production/terraform.tfstate"
+    terraform_state_kms_key_arn = "arn:aws:kms:ap-southeast-2:123456789012:key/00000000-0000-0000-0000-000000000000"
+    managed_s3_bucket_arns      = ["arn:aws:s3:::llmops-production-artifacts", "arn:aws:s3:::llmops-production-audit"]
+  }
+
+  assert {
+    condition = (
+      jsondecode(aws_iam_role.github_drift.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:environment:production-drift"] &&
+      one([for statement in jsondecode(local.audit_policy).Statement : statement if statement.Sid == "ReadExactTerraformStateObject"]).Resource == ["arn:aws:s3:::llmops-production-terraform-state/cloud-native-llmops/production/terraform.tfstate"] &&
+      one([for statement in jsondecode(local.audit_policy).Statement : statement if statement.Sid == "DecryptExactTerraformStateKey"]).Resource == ["arn:aws:kms:ap-southeast-2:123456789012:key/00000000-0000-0000-0000-000000000000"] &&
+      one([for statement in jsondecode(local.audit_policy).Statement : statement if statement.Sid == "PublishBinaryDriftSignal"]).Condition.StringEquals["cloudwatch:namespace"] == ["CloudNativeLLMOps"] &&
+      one([for statement in jsondecode(local.audit_policy).Statement : statement if statement.Sid == "ReadManagedBucketConfiguration"]).Resource == ["arn:aws:s3:::llmops-production-artifacts", "arn:aws:s3:::llmops-production-audit"] &&
+      contains(one([for statement in jsondecode(local.audit_policy).Statement : statement if statement.Sid == "DenySensitiveDataReads"]).Action, "secretsmanager:GetSecretValue") &&
+      length([for statement in jsondecode(local.audit_policy).Statement : statement if statement.Effect == "Allow" && contains(statement.Action, "secretsmanager:GetSecretValue")]) == 0
+    )
+    error_message = "Drift audit must read one state object and control-plane metadata without application data."
+  }
+
+  assert {
+    condition = length([
+      for action in flatten([
+        for statement in jsondecode(local.audit_policy).Statement : statement.Action
+        if statement.Effect == "Allow"
+      ]) : action
+      if action != "cloudwatch:PutMetricData" && can(regex(":(Create|Put|Update|Delete|Register|Deregister|Start|Stop|Restore|Pass|Tag|Untag|Set)", action))
+    ]) == 0
+    error_message = "The drift role must not contain infrastructure mutation actions."
   }
 }
 
@@ -572,6 +643,14 @@ run "rejects_unprotected_operations_identity" {
     github_operations_oidc_subjects = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:ref:refs/heads/master"]
   }
   expect_failures = [var.github_operations_oidc_subjects]
+}
+
+run "rejects_unprotected_drift_identity" {
+  command = plan
+  variables {
+    github_drift_oidc_subjects = ["repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:ref:refs/heads/master"]
+  }
+  expect_failures = [var.github_drift_oidc_subjects]
 }
 
 run "rejects_missing_alarm_recipient" {

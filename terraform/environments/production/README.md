@@ -25,7 +25,17 @@ terraform -chdir=terraform/environments/production plan
 terraform -chdir=terraform/environments/production apply
 terraform -chdir=terraform/environments/production output -json deployment_github_variables
 terraform -chdir=terraform/environments/production output -json operations_github_variables
+terraform -chdir=terraform/environments/production output -json drift_github_variables
 ```
+
+Create a `production-drift` GitHub environment restricted to `master`, copy its
+five output variables, and add `PRODUCTION_TFVARS_JSON` as an environment secret
+containing the complete JSON object used for production inputs. The daily
+workflow reads the exact remote state with locking disabled, retains only a
+value-free report, publishes `InfrastructureDriftDetected`, and fails on drift
+or audit errors. Do not configure required reviewers on this environment because
+scheduled audits must run unattended; its OIDC subject remains separate from
+deployment and incident operations.
 
 Set `monthly_budget_limit_usd` and
 `alarm_llm_hourly_cost_threshold_usd` to deliberate operating limits before
