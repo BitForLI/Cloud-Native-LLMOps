@@ -26,3 +26,4 @@ blue_termination_wait_minutes = 10
 alarm_notification_emails    = ["platform@example.com"]
 monthly_budget_limit_usd                = 100
 alarm_llm_hourly_cost_threshold_usd     = 10
+audit_archive_retention_days            = 2557

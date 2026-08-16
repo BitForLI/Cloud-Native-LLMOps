@@ -8,7 +8,7 @@ Production-oriented LLM service platform: automated quality gates, container del
 GitHub PR -> lint / pytest / LLM evaluation / security scan
    -> main -> Docker build -> Amazon ECR -> AWS WAF / ALB -> ECS Fargate -> Bedrock
                                              |       |       |
-                                      CloudWatch/X-Ray  S3  DynamoDB
+                                CloudWatch/X-Ray/CloudTrail  S3  DynamoDB
                                              |
                               Application Auto Scaling <- SQS backlog
 ```
@@ -84,6 +84,20 @@ traffic, and account boundary you actually operate. The budget deliberately
 alerts instead of shutting infrastructure down: an automatic cost kill switch
 could interrupt production or make durable data unavailable. AWS billing data
 is delayed, so the hourly application metric is the earlier signal.
+
+### Security audit trail
+
+Production enables one continuously logging, multi-Region CloudTrail including
+global management events such as IAM changes. Audit files go to a dedicated
+private, versioned S3 bucket encrypted by a rotating customer-managed KMS key.
+CloudTrail log-file validation signs digest chains so operators can detect
+modification or deletion; archives default to seven-year retention.
+
+The trail also streams to an encrypted CloudWatch log group. Metric filters
+raise SNS alarms for unauthorized API calls, root-account use, IAM writes, and
+changes that stop, delete, or reconfigure the trail. Broad Bedrock and S3 data
+events are intentionally excluded: this audit layer records the control plane
+without copying prompts or other application payloads into security logs.
 
 OpenTelemetry instruments FastAPI and botocore calls. API and Worker task
 definitions each include an essential, version-pinned AWS Distro for

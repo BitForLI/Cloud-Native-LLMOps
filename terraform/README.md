@@ -228,3 +228,11 @@ publishing and adds a combined API/Worker hourly estimated LLM cost alarm.
 Budget alerts are account-level so Bedrock invocation charges are not omitted
 by resource-tag filtering; use a dedicated workload account or set the limit
 to account for colocated workloads.
+
+The production `audit` module creates a multi-Region management-event
+CloudTrail with global-service coverage and log-file validation. A dedicated
+KMS key encrypts both the private versioned S3 archive and the CloudWatch Logs
+delivery. CloudTrail can write only the exact account prefix and trail ARN;
+its CloudWatch role can create streams and publish events only in the audit log
+group. Four metric filters reuse the encrypted operations topic for security
+detections.

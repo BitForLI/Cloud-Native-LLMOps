@@ -352,3 +352,14 @@ variable "alarm_llm_hourly_cost_threshold_usd" {
     error_message = "alarm_llm_hourly_cost_threshold_usd must be positive and no greater than the monthly budget."
   }
 }
+
+variable "audit_archive_retention_days" {
+  description = "Retention for encrypted, validated CloudTrail archives."
+  type        = number
+  default     = 2557
+
+  validation {
+    condition     = var.audit_archive_retention_days >= 365 && floor(var.audit_archive_retention_days) == var.audit_archive_retention_days
+    error_message = "audit_archive_retention_days must be an integer of at least 365 days."
+  }
+}

@@ -32,6 +32,12 @@ apply. The first covers account billing spend; the second is the faster
 application-estimated Bedrock signal. Confirm the SNS email subscription or
 neither operational nor budget notifications will reach the recipient.
 
+The production apply also creates a seven-year CloudTrail archive. Treat the
+`audit_archive_bucket`, `audit_trail_name`, and `security_alarm_names`
+values in `production_safety_profile` as operational inventory. The archive
+bucket uses `force_destroy = false`; remove retained evidence explicitly only
+through an approved decommissioning process.
+
 Put the output values plus `STAGING_API_ECR_REPOSITORY` and
 `STAGING_WORKER_ECR_REPOSITORY` in the protected GitHub `production`
 environment. Require reviewers, prevent self-review, enforce deployment from

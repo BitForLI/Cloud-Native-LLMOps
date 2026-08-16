@@ -60,7 +60,11 @@ run "resilient_production_defaults" {
       output.production_safety_profile.monthly_budget_name == "cloud-native-llmops-prod-monthly-cost" &&
       output.production_safety_profile.monthly_budget_limit_usd == 100 &&
       output.production_safety_profile.budget_alert_thresholds.actual_percent == 80 &&
-      output.production_safety_profile.budget_alert_thresholds.forecast_percent == 100
+      output.production_safety_profile.budget_alert_thresholds.forecast_percent == 100 &&
+      output.production_safety_profile.audit_trail_name == "cloud-native-llmops-prod-management" &&
+      output.production_safety_profile.audit_log_group == "/aws/cloudtrail/cloud-native-llmops-prod" &&
+      output.production_safety_profile.audit_validation_enabled &&
+      length(output.production_safety_profile.security_alarm_names) == 4
     )
     error_message = "Production must preserve multi-AZ capacity, retention, deletion protection, and two target groups."
   }
@@ -96,6 +100,85 @@ run "resilient_production_defaults" {
       "WORKER_ECS_SERVICE",
     ])
     error_message = "Production must expose the complete non-secret release configuration."
+  }
+}
+
+run "audit_trail_is_encrypted_validated_and_detected" {
+  command = apply
+
+  module { source = "../../modules/audit" }
+
+  override_data {
+    target = data.aws_partition.current
+    values = { partition = "aws" }
+  }
+
+  override_data {
+    target = data.aws_caller_identity.current
+    values = { account_id = "123456789012" }
+  }
+
+  override_resource {
+    target = aws_kms_key.audit
+    values = {
+      arn    = "arn:aws:kms:ap-southeast-2:123456789012:key/00000000-0000-0000-0000-000000000000"
+      key_id = "00000000-0000-0000-0000-000000000000"
+    }
+  }
+
+  variables {
+    name                   = "llmops-production"
+    aws_region             = "ap-southeast-2"
+    log_retention_days     = 365
+    archive_retention_days = 2557
+    alarm_topic_arn        = "arn:aws:sns:ap-southeast-2:123456789012:llmops-production-alarms"
+  }
+
+  assert {
+    condition = (
+      aws_cloudtrail.management.enable_logging &&
+      aws_cloudtrail.management.enable_log_file_validation &&
+      aws_cloudtrail.management.include_global_service_events &&
+      aws_cloudtrail.management.is_multi_region_trail &&
+      one(aws_cloudtrail.management.event_selector).include_management_events &&
+      one(aws_cloudtrail.management.event_selector).read_write_type == "All"
+    )
+    error_message = "CloudTrail must continuously record all management events across enabled Regions and global services."
+  }
+
+  assert {
+    condition = (
+      aws_kms_key.audit.enable_key_rotation &&
+      strcontains(aws_kms_key.audit.policy, "cloudtrail.amazonaws.com") &&
+      strcontains(aws_kms_key.audit.policy, "logs.ap-southeast-2.amazonaws.com") &&
+      strcontains(aws_kms_key.audit.policy, "aws:SourceArn") &&
+      strcontains(aws_kms_key.audit.policy, "AllowCloudTrailBucketKeyDecryption") &&
+      one(aws_s3_bucket_versioning.audit.versioning_configuration).status == "Enabled" &&
+      aws_s3_bucket_public_access_block.audit.restrict_public_buckets &&
+      one(aws_s3_bucket_lifecycle_configuration.audit.rule).expiration[0].days == 2557
+    )
+    error_message = "Audit archives must be encrypted, versioned, private, and retained for the configured period."
+  }
+
+  assert {
+    condition = (
+      strcontains(aws_s3_bucket_policy.audit.policy, "DenyInsecureTransport") &&
+      strcontains(aws_s3_bucket_policy.audit.policy, "bucket-owner-full-control") &&
+      strcontains(aws_s3_bucket_policy.audit.policy, "arn:aws:cloudtrail:ap-southeast-2:123456789012:trail/llmops-production-management") &&
+      strcontains(aws_iam_role_policy.cloudtrail_logs.policy, "logs:CreateLogStream") &&
+      strcontains(aws_iam_role_policy.cloudtrail_logs.policy, "logs:PutLogEvents")
+    )
+    error_message = "CloudTrail delivery permissions must be transport-safe and scoped to the exact trail and log streams."
+  }
+
+  assert {
+    condition = (
+      length(aws_cloudwatch_log_metric_filter.security) == 4 &&
+      length(aws_cloudwatch_metric_alarm.security) == 4 &&
+      alltrue([for alarm in aws_cloudwatch_metric_alarm.security : alarm.alarm_actions == toset(["arn:aws:sns:ap-southeast-2:123456789012:llmops-production-alarms"])]) &&
+      toset(keys(aws_cloudwatch_metric_alarm.security)) == toset(["unauthorized", "root_activity", "iam_change", "trail_change"])
+    )
+    error_message = "Audit telemetry must alert on denied calls, root use, IAM writes, and trail tampering."
   }
 }
 

@@ -56,6 +56,11 @@ output "production_safety_profile" {
     monthly_budget_name        = module.cost_control.budget_name
     monthly_budget_limit_usd   = module.cost_control.monthly_budget_limit_usd
     budget_alert_thresholds    = module.cost_control.notification_thresholds
+    audit_trail_name           = module.audit.trail_name
+    audit_archive_bucket       = module.audit.archive_bucket_name
+    audit_log_group            = module.audit.log_group_name
+    audit_validation_enabled   = module.audit.log_file_validation_enabled
+    security_alarm_names       = module.audit.security_alarm_names
   }
 }
 

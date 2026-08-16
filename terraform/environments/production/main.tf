@@ -181,6 +181,17 @@ module "monitoring" {
   tags                                   = local.common_tags
 }
 
+module "audit" {
+  source = "../../modules/audit"
+
+  name                   = local.name
+  aws_region             = var.aws_region
+  log_retention_days     = var.log_retention_days
+  archive_retention_days = var.audit_archive_retention_days
+  alarm_topic_arn        = module.monitoring.alarm_topic_arn
+  tags                   = local.common_tags
+}
+
 module "cost_control" {
   source = "../../modules/cost_control"
 
