@@ -90,15 +90,28 @@ worker_image="${registry}/${STAGING_WORKER_ECR_REPOSITORY}@${worker_digest}"
 previous_api_task=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$API_ECS_SERVICE" --query 'services[0].taskDefinition' --output text)
 previous_worker_task=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$WORKER_ECS_SERVICE" --query 'services[0].taskDefinition' --output text)
 deployment_started=false
+rollback_failed=false
 
 rollback() {
   local exit_code=$?
   trap - ERR
   if [[ "$deployment_started" == true ]]; then
     echo "Staging verification failed; restoring both previous task definitions" >&2
-    aws ecs update-service --cluster "$ECS_CLUSTER" --service "$API_ECS_SERVICE" --task-definition "$previous_api_task" >/dev/null || true
-    aws ecs update-service --cluster "$ECS_CLUSTER" --service "$WORKER_ECS_SERVICE" --task-definition "$previous_worker_task" >/dev/null || true
-    aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$API_ECS_SERVICE" "$WORKER_ECS_SERVICE" || true
+    if ! aws ecs update-service --cluster "$ECS_CLUSTER" --service "$API_ECS_SERVICE" --task-definition "$previous_api_task" >/dev/null; then
+      echo "Failed to restore the previous staging API task definition" >&2
+      rollback_failed=true
+    fi
+    if ! aws ecs update-service --cluster "$ECS_CLUSTER" --service "$WORKER_ECS_SERVICE" --task-definition "$previous_worker_task" >/dev/null; then
+      echo "Failed to restore the previous staging Worker task definition" >&2
+      rollback_failed=true
+    fi
+    if ! aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$API_ECS_SERVICE" "$WORKER_ECS_SERVICE"; then
+      echo "Restored staging services did not become stable" >&2
+      rollback_failed=true
+    fi
+    if [[ "$rollback_failed" == true ]]; then
+      echo "Rollback incomplete; manual intervention required" >&2
+    fi
   fi
   exit "$exit_code"
 }

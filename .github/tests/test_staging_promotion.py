@@ -77,6 +77,16 @@ def test_promotion_reuses_digest_scans_and_rolls_back_both_services():
         assert fragment in script
 
 
+def test_staging_rollback_reports_aws_recovery_failures():
+    script = SCRIPT_PATH.read_text(encoding="utf-8")
+    rollback = script.split("rollback() {", 1)[1].split("trap rollback ERR", 1)[0]
+    recovery_lines = [line for line in rollback.splitlines() if "aws " in line]
+
+    assert recovery_lines
+    assert all("|| true" not in line for line in recovery_lines)
+    assert "Rollback incomplete; manual intervention required" in rollback
+
+
 def test_promotion_configuration_is_complete():
     environment = load_workflow()["jobs"]["promote"]["env"]
 

@@ -103,8 +103,10 @@ worker_started=false
 api_deployment_id=""
 api_deployment_succeeded=false
 canary_probe_pid=""
+rollback_failed=false
 rollback() {
   local exit_code=$?
+  local rollback_deployment_id=""
   trap - ERR
   echo "Production verification failed; restoring the previous release" >&2
   if [[ -n "$canary_probe_pid" ]]; then
@@ -112,14 +114,34 @@ rollback() {
     wait "$canary_probe_pid" 2>/dev/null || true
   fi
   if [[ -n "$api_deployment_id" && "$api_deployment_succeeded" == false ]]; then
-    aws deploy stop-deployment --deployment-id "$api_deployment_id" --auto-rollback-enabled >/dev/null || true
+    if ! aws deploy stop-deployment --deployment-id "$api_deployment_id" --auto-rollback-enabled >/dev/null; then
+      echo "Failed to stop the production API deployment" >&2
+      rollback_failed=true
+    fi
   elif [[ "$api_deployment_succeeded" == true ]]; then
-    rollback_deployment_id=$(create_api_deployment "$previous_api_task" "Rollback failed production verification for ${IMAGE_TAG}") || true
-    [[ -z "${rollback_deployment_id:-}" ]] || aws deploy wait deployment-successful --deployment-id "$rollback_deployment_id" || true
+    if ! rollback_deployment_id=$(create_api_deployment "$previous_api_task" "Rollback failed production verification for ${IMAGE_TAG}"); then
+      echo "Failed to create the reverse production API deployment" >&2
+      rollback_failed=true
+    elif [[ "$rollback_deployment_id" != d-* ]]; then
+      echo "Reverse production API deployment returned an invalid deployment ID" >&2
+      rollback_failed=true
+    elif ! aws deploy wait deployment-successful --deployment-id "$rollback_deployment_id"; then
+      echo "Reverse production API deployment did not succeed" >&2
+      rollback_failed=true
+    fi
   fi
   if [[ "$worker_started" == true ]]; then
-    aws ecs update-service --cluster "$ECS_CLUSTER" --service "$WORKER_ECS_SERVICE" --task-definition "$previous_worker_task" >/dev/null || true
-    aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$WORKER_ECS_SERVICE" || true
+    if ! aws ecs update-service --cluster "$ECS_CLUSTER" --service "$WORKER_ECS_SERVICE" --task-definition "$previous_worker_task" >/dev/null; then
+      echo "Failed to restore the previous production Worker task definition" >&2
+      rollback_failed=true
+    fi
+    if ! aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$WORKER_ECS_SERVICE"; then
+      echo "Restored production Worker service did not become stable" >&2
+      rollback_failed=true
+    fi
+  fi
+  if [[ "$rollback_failed" == true ]]; then
+    echo "Rollback incomplete; manual intervention required" >&2
   fi
   exit "$exit_code"
 }

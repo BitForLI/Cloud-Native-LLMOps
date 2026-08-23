@@ -206,15 +206,28 @@ jobs:
           previous_api_task=""
           previous_worker_task=""
           deployment_started=false
+          rollback_failed=false
 
           rollback() {
             local exit_code=$?
             trap - ERR
             if [[ "$deployment_started" == true ]]; then
               echo "Deployment failed; restoring both previous task definitions" >&2
-              aws ecs update-service --cluster "$ECS_CLUSTER" --service "$API_ECS_SERVICE" --task-definition "$previous_api_task" >/dev/null || true
-              aws ecs update-service --cluster "$ECS_CLUSTER" --service "$WORKER_ECS_SERVICE" --task-definition "$previous_worker_task" >/dev/null || true
-              aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$API_ECS_SERVICE" "$WORKER_ECS_SERVICE" || true
+              if ! aws ecs update-service --cluster "$ECS_CLUSTER" --service "$API_ECS_SERVICE" --task-definition "$previous_api_task" >/dev/null; then
+                echo "Failed to restore the previous API task definition" >&2
+                rollback_failed=true
+              fi
+              if ! aws ecs update-service --cluster "$ECS_CLUSTER" --service "$WORKER_ECS_SERVICE" --task-definition "$previous_worker_task" >/dev/null; then
+                echo "Failed to restore the previous Worker task definition" >&2
+                rollback_failed=true
+              fi
+              if ! aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$API_ECS_SERVICE" "$WORKER_ECS_SERVICE"; then
+                echo "Restored development services did not become stable" >&2
+                rollback_failed=true
+              fi
+              if [[ "$rollback_failed" == true ]]; then
+                echo "Rollback incomplete; manual intervention required" >&2
+              fi
             fi
             exit "$exit_code"
           }

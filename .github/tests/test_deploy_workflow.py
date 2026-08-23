@@ -71,6 +71,18 @@ def test_deploy_checks_exact_revision_images_scans_health_and_rollback():
         assert required_fragment in scripts
 
 
+def test_development_rollback_reports_aws_recovery_failures():
+    scripts = "\n".join(
+        step.get("run", "") for step in load_workflow()["jobs"]["deploy"]["steps"]
+    )
+    rollback = scripts.split("rollback() {", 1)[1].split("trap rollback ERR", 1)[0]
+    recovery_lines = [line for line in rollback.splitlines() if "aws " in line]
+
+    assert recovery_lines
+    assert all("|| true" not in line for line in recovery_lines)
+    assert "Rollback incomplete; manual intervention required" in rollback
+
+
 def test_deploy_configuration_is_bounded_and_complete():
     workflow = load_workflow()
     job = workflow["jobs"]["deploy"]
