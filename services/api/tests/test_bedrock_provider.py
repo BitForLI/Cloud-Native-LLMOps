@@ -54,7 +54,10 @@ def test_provider_creates_bedrock_runtime_client_with_safe_timeouts(monkeypatch)
         captured.update(kwargs)
         return fake_client
 
-    monkeypatch.setattr("app.providers.bedrock.boto3.client", fake_boto3_client)
+    monkeypatch.setattr(
+        "services.common.llm.bedrock.boto3.client",
+        fake_boto3_client,
+    )
 
     provider = BedrockProvider(make_settings())
 
@@ -150,11 +153,7 @@ def test_transport_error_is_converted():
 
 
 def test_missing_usage_returns_unknown_cost():
-    response = {
-        "body": FakeBody(
-            b'{"content":[{"type":"text","text":"response"}]}'
-        )
-    }
+    response = {"body": FakeBody(b'{"content":[{"type":"text","text":"response"}]}')}
     provider = BedrockProvider(make_settings(), client=FakeClient(response=response))
 
     result = provider.generate("hello")

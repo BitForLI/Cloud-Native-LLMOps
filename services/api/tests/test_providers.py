@@ -4,6 +4,16 @@ from app.providers.bedrock import BedrockProvider
 from app.providers.factory import clear_provider_cache, create_provider, get_provider
 from app.providers.local import LocalProvider
 
+from services.common.llm.base import LLMProvider as SharedLLMProvider
+from services.common.llm.bedrock import BedrockProvider as SharedBedrockProvider
+from services.common.llm.local import LocalProvider as SharedLocalProvider
+
+
+def test_api_provider_exports_use_shared_implementations():
+    assert LLMProvider is SharedLLMProvider
+    assert BedrockProvider is SharedBedrockProvider
+    assert LocalProvider is SharedLocalProvider
+
 
 def test_local_provider_is_deterministic():
     provider = LocalProvider()
@@ -29,7 +39,7 @@ def test_factory_selects_local_provider():
 def test_factory_selects_bedrock_provider_with_configuration(monkeypatch):
     fake_client = object()
     monkeypatch.setattr(
-        "app.providers.bedrock.boto3.client",
+        "services.common.llm.bedrock.boto3.client",
         lambda *args, **kwargs: fake_client,
     )
     settings = Settings(
