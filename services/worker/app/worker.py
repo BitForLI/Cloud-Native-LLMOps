@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 from threading import Event
+from typing import cast
 
 import boto3
 from botocore.config import Config
@@ -283,8 +284,8 @@ def main() -> None:
             "dynamodb", region_name=settings.aws_region, config=config
         )
         sqs = boto3.client("sqs", region_name=settings.aws_region, config=config)
-        repository = DynamoDBJobRepository(dynamodb, settings.job_table_name or "")
-        queue = SQSJobQueue(sqs, settings.inference_queue_url or "")
+        repository = DynamoDBJobRepository(dynamodb, cast(str, settings.job_table_name))
+        queue = SQSJobQueue(sqs, cast(str, settings.inference_queue_url))
         processor = DurableJobProcessor(
             repository,
             queue,

@@ -1,7 +1,7 @@
 import time
 from functools import lru_cache
 from threading import BoundedSemaphore, Event, Lock, Thread
-from typing import Annotated, Protocol
+from typing import Annotated, Protocol, cast
 
 import boto3
 from botocore.config import Config
@@ -234,10 +234,10 @@ def _get_cached_job_service(serialized_settings: str) -> JobService:
         service = AwsJobService(
             DynamoDBJobRepository(
                 dynamodb,
-                settings.job_table_name or "",
+                cast(str, settings.job_table_name),
                 ttl_seconds=settings.job_ttl_seconds,
             ),
-            SQSJobQueue(sqs, settings.inference_queue_url or ""),
+            SQSJobQueue(sqs, cast(str, settings.inference_queue_url)),
         )
     _created_services.append(service)
     return service
