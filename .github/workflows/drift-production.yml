@@ -2,8 +2,6 @@ name: Audit Production Drift
 run-name: Production Drift ${{ github.sha }}
 
 on:
-  schedule:
-    - cron: "43 4 * * *"
   workflow_dispatch:
 
 permissions:
