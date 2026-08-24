@@ -216,10 +216,16 @@ resource "aws_ecs_task_definition" "worker" {
     user                   = "10001:10001"
     readonlyRootFilesystem = true
     stopTimeout            = 30
-    dependsOn = [{
-      containerName = "aws-otel-collector"
-      condition     = "START"
-    }]
+    dependsOn = [
+      {
+        containerName = "aws-otel-collector"
+        condition     = "START"
+      },
+      {
+        containerName = "worker-tmp-permissions"
+        condition     = "SUCCESS"
+      },
+    ]
     portMappings = []
     environment  = local.worker_environment
     mountPoints = [{
@@ -252,6 +258,23 @@ resource "aws_ecs_task_definition" "worker" {
         awslogs-stream-prefix = "worker"
       }
     }
+    },
+    {
+      name                   = "worker-tmp-permissions"
+      image                  = "${var.worker_repository_url}:${var.worker_image_tag}"
+      essential              = false
+      user                   = "0"
+      readonlyRootFilesystem = true
+      command                = ["chown", "10001:10001", "/tmp"]
+      portMappings           = []
+      environment            = []
+      secrets                = []
+      mountPoints = [{
+        sourceVolume  = "worker-tmp"
+        containerPath = "/tmp"
+        readOnly      = false
+      }]
+      volumesFrom = []
     },
     {
       name                   = "aws-otel-collector"

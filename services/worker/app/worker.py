@@ -113,6 +113,7 @@ class DurableJobProcessor:
                 if isinstance(error, LLMProviderError)
                 else "internal_error"
             )
+            provider_code = getattr(error, "provider_code", "unknown")
             emit_inference_metrics(
                 service="worker",
                 environment=self._environment,
@@ -133,11 +134,12 @@ class DurableJobProcessor:
                         type(update_error).__name__,
                     )
             logger.error(
-                "Job %s attempt %s failed with code %s (%s); message retained.",
+                "Job %s attempt %s failed with code %s (%s, provider=%s); message retained.",
                 message.task.job_id,
                 message.receive_count,
                 error_code,
                 type(error).__name__,
+                provider_code,
             )
             return
 

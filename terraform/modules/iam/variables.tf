@@ -96,12 +96,40 @@ variable "inference_queue_arn" {
 }
 
 variable "bedrock_model_ids" {
-  description = "Exact Bedrock foundation model IDs runtime tasks may invoke."
+  description = "Exact Bedrock foundation model IDs runtime tasks may invoke directly or through the configured inference profile."
   type        = set(string)
 
   validation {
     condition     = length(var.bedrock_model_ids) > 0 && alltrue([for id in var.bedrock_model_ids : length(trimspace(id)) > 0 && !strcontains(id, "*")])
     error_message = "bedrock_model_ids must contain concrete non-empty model IDs without wildcards."
+  }
+}
+
+variable "bedrock_inference_profile_id" {
+  description = "Optional exact geographic inference profile ID used as the runtime model target."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.bedrock_inference_profile_id == null || (length(trimspace(var.bedrock_inference_profile_id)) > 0 && !strcontains(var.bedrock_inference_profile_id, "*"))
+    error_message = "bedrock_inference_profile_id must be null or a concrete non-empty ID without wildcards."
+  }
+}
+
+variable "bedrock_inference_regions" {
+  description = "Foundation-model destination Regions required by the configured geographic inference profile."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition = (
+      (var.bedrock_inference_profile_id == null && length(var.bedrock_inference_regions) == 0) ||
+      (var.bedrock_inference_profile_id != null && length(var.bedrock_inference_regions) > 0 && alltrue([
+        for region in var.bedrock_inference_regions : can(regex("^[a-z]{2}(?:-gov)?-[a-z]+-[0-9]+$", region))
+      ]))
+    )
+    error_message = "bedrock_inference_regions must be empty without a profile and contain valid destination Regions with a profile."
   }
 }
 

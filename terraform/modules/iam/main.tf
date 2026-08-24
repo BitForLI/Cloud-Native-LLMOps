@@ -7,10 +7,17 @@ locals {
   partition  = data.aws_partition.current.partition
   region     = data.aws_region.current.region
 
-  bedrock_model_arns = [
-    for model_id in var.bedrock_model_ids :
-    "arn:${local.partition}:bedrock:${local.region}::foundation-model/${model_id}"
+  bedrock_model_regions = var.bedrock_inference_profile_id == null ? toset([local.region]) : var.bedrock_inference_regions
+  bedrock_model_arns = flatten([
+    for model_id in var.bedrock_model_ids : [
+      for region in local.bedrock_model_regions :
+      "arn:${local.partition}:bedrock:${region}::foundation-model/${model_id}"
+    ]
+  ])
+  bedrock_inference_profile_arns = var.bedrock_inference_profile_id == null ? [] : [
+    "arn:${local.partition}:bedrock:${local.region}:${local.account_id}:inference-profile/${var.bedrock_inference_profile_id}"
   ]
+  bedrock_invoke_resource_arns = concat(local.bedrock_inference_profile_arns, local.bedrock_model_arns)
   ecr_repository_arns = [
     var.api_ecr_repository_arn,
     var.worker_ecr_repository_arn,
@@ -139,7 +146,7 @@ locals {
             "bedrock:InvokeModel",
             "bedrock:InvokeModelWithResponseStream",
           ]
-          Resource = local.bedrock_model_arns
+          Resource = local.bedrock_invoke_resource_arns
         },
         {
           Sid    = "SubmitInferenceJobs"
@@ -180,7 +187,7 @@ locals {
             "bedrock:InvokeModel",
             "bedrock:InvokeModelWithResponseStream",
           ]
-          Resource = local.bedrock_model_arns
+          Resource = local.bedrock_invoke_resource_arns
         },
         {
           Sid    = "ConsumeInferenceJobs"

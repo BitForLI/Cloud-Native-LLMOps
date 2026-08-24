@@ -574,18 +574,18 @@ resource "aws_cloudwatch_dashboard" "this" {
         properties = {
           title = "ECS CPU and memory", region = var.aws_region, view = "timeSeries", period = 60
           metrics = concat(
-            flatten([
+            concat([
               for component, service in local.ecs_services : [
                 ["AWS/ECS", "CPUUtilization", "ClusterName", var.cluster_name, "ServiceName", service, { label = "${component} CPU" }],
                 [".", "MemoryUtilization", ".", ".", ".", ".", { label = "${component} memory" }],
               ]
-            ]),
-            flatten([
+            ]...),
+            concat([
               for component, service in local.ecs_services : [
                 ["ECS/ContainerInsights", "RunningTaskCount", "ClusterName", var.cluster_name, "ServiceName", service, { label = "${component} running", yAxis = "right" }],
                 [".", "DesiredTaskCount", ".", ".", ".", ".", { label = "${component} desired", yAxis = "right" }],
               ]
-            ])
+            ]...)
           )
         }
       },

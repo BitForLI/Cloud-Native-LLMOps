@@ -27,6 +27,10 @@ class BedrockProviderError(LLMProviderError):
 class BedrockInvocationError(BedrockProviderError):
     """Bedrock rejected the request or could not be reached."""
 
+    def __init__(self, message: str, *, provider_code: str = "unknown") -> None:
+        super().__init__(message)
+        self.provider_code = provider_code
+
 
 class BedrockResponseError(BedrockProviderError):
     """Bedrock returned a response that did not match the expected schema."""
@@ -67,11 +71,14 @@ class BedrockProvider:
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code", "ClientError")
             raise BedrockInvocationError(
-                f"Bedrock invocation failed for model {self.model_id}: {code}"
+                f"Bedrock invocation failed for model {self.model_id}: {code}",
+                provider_code=code,
             ) from exc
         except BotoCoreError as exc:
+            code = type(exc).__name__
             raise BedrockInvocationError(
-                f"Bedrock runtime is unavailable for model {self.model_id}: {type(exc).__name__}"
+                f"Bedrock runtime is unavailable for model {self.model_id}: {code}",
+                provider_code=code,
             ) from exc
 
     def _build_payload(self, prompt: str) -> dict[str, Any]:

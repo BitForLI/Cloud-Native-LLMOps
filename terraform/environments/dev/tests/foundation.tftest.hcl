@@ -289,13 +289,15 @@ run "iam_separates_runtime_and_deployment_permissions" {
   }
 
   variables {
-    name                      = "llmops-test"
-    api_ecr_repository_arn    = "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/api"
-    worker_ecr_repository_arn = "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/worker"
-    artifact_bucket_arn       = "arn:aws:s3:::llmops-artifacts"
-    job_table_arn             = "arn:aws:dynamodb:ap-southeast-2:123456789012:table/llmops-jobs"
-    inference_queue_arn       = "arn:aws:sqs:ap-southeast-2:123456789012:llmops-inference"
-    bedrock_model_ids         = ["anthropic.claude-3-haiku-20240307-v1:0"]
+    name                         = "llmops-test"
+    api_ecr_repository_arn       = "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/api"
+    worker_ecr_repository_arn    = "arn:aws:ecr:ap-southeast-2:123456789012:repository/llmops/worker"
+    artifact_bucket_arn          = "arn:aws:s3:::llmops-artifacts"
+    job_table_arn                = "arn:aws:dynamodb:ap-southeast-2:123456789012:table/llmops-jobs"
+    inference_queue_arn          = "arn:aws:sqs:ap-southeast-2:123456789012:llmops-inference"
+    bedrock_model_ids            = ["anthropic.claude-haiku-4-5-20251001-v1:0"]
+    bedrock_inference_profile_id = "au.anthropic.claude-haiku-4-5-20251001-v1:0"
+    bedrock_inference_regions    = ["ap-southeast-2", "ap-southeast-4"]
     github_oidc_subjects = [
       "repo:BitForLI@218609705/Cloud-Native-LLMOps@1320235086:ref:refs/heads/master"
     ]
@@ -345,11 +347,13 @@ run "iam_separates_runtime_and_deployment_permissions" {
   }
 
   assert {
-    condition = endswith(
-      one(one([for statement in jsondecode(local.api_task_policy).Statement : statement if statement.Sid == "InvokeConfiguredModels"]).Resource),
-      ":foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
+    condition = (
+      length(one([for statement in jsondecode(local.api_task_policy).Statement : statement if statement.Sid == "InvokeConfiguredModels"]).Resource) == 3 &&
+      length([for arn in one([for statement in jsondecode(local.api_task_policy).Statement : statement if statement.Sid == "InvokeConfiguredModels"]).Resource : arn if endswith(arn, ":inference-profile/au.anthropic.claude-haiku-4-5-20251001-v1:0")]) == 1 &&
+      length([for arn in one([for statement in jsondecode(local.api_task_policy).Statement : statement if statement.Sid == "InvokeConfiguredModels"]).Resource : arn if endswith(arn, ":ap-southeast-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0")]) == 1 &&
+      length([for arn in one([for statement in jsondecode(local.api_task_policy).Statement : statement if statement.Sid == "InvokeConfiguredModels"]).Resource : arn if endswith(arn, ":ap-southeast-4::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0")]) == 1
     )
-    error_message = "Bedrock invocation must be scoped to the configured model."
+    error_message = "Bedrock invocation must be scoped to the configured AU inference profile and its exact destination models."
   }
 
   assert {
@@ -618,10 +622,14 @@ run "ecs_hardens_private_api_and_worker_services" {
     condition = (
       one(one([for definition in jsondecode(aws_ecs_task_definition.api.container_definitions) : definition if definition.name == "api"]).mountPoints).containerPath == "/tmp" &&
       one(one([for definition in jsondecode(aws_ecs_task_definition.worker.container_definitions) : definition if definition.name == "worker"]).mountPoints).containerPath == "/tmp" &&
+      one([for definition in jsondecode(aws_ecs_task_definition.worker.container_definitions) : definition if definition.name == "worker-tmp-permissions"]).command == ["chown", "10001:10001", "/tmp"] &&
+      one([for definition in jsondecode(aws_ecs_task_definition.worker.container_definitions) : definition if definition.name == "worker-tmp-permissions"]).user == "0" &&
+      !one([for definition in jsondecode(aws_ecs_task_definition.worker.container_definitions) : definition if definition.name == "worker-tmp-permissions"]).essential &&
+      one([for dependency in one([for definition in jsondecode(aws_ecs_task_definition.worker.container_definitions) : definition if definition.name == "worker"]).dependsOn : dependency if dependency.containerName == "worker-tmp-permissions"]).condition == "SUCCESS" &&
       !contains(keys(one([for definition in jsondecode(aws_ecs_task_definition.api.container_definitions) : definition if definition.name == "api"]).linuxParameters), "tmpfs") &&
       !contains(keys(one([for definition in jsondecode(aws_ecs_task_definition.worker.container_definitions) : definition if definition.name == "worker"]).linuxParameters), "tmpfs")
     )
-    error_message = "Fargate tasks must use supported writable /tmp bind mounts, not unsupported tmpfs."
+    error_message = "Fargate tasks must use supported writable /tmp bind mounts, with Worker ownership initialized before its non-root process starts."
   }
 
   assert {
@@ -665,17 +673,20 @@ run "ecs_hardens_private_api_and_worker_services" {
   }
 
   assert {
-    condition = alltrue([
-      for definition in [
-        jsondecode(aws_ecs_task_definition.api.container_definitions),
-        jsondecode(aws_ecs_task_definition.worker.container_definitions),
-        ] : (
-        length(definition) == 2 &&
-        one([for container in definition : container if container.name == "aws-otel-collector"]).image == "public.ecr.aws/aws-observability/aws-otel-collector:v0.48.0" &&
-        one([for container in definition : container if container.name == "aws-otel-collector"]).essential &&
-        one([for container in definition : container if container.name == "aws-otel-collector"]).command == ["--config=/etc/ecs/ecs-default-config.yaml"]
-      )
-    ])
+    condition = (
+      length(jsondecode(aws_ecs_task_definition.api.container_definitions)) == 2 &&
+      length(jsondecode(aws_ecs_task_definition.worker.container_definitions)) == 3 &&
+      alltrue([
+        for definition in [
+          jsondecode(aws_ecs_task_definition.api.container_definitions),
+          jsondecode(aws_ecs_task_definition.worker.container_definitions),
+          ] : (
+          one([for container in definition : container if container.name == "aws-otel-collector"]).image == "public.ecr.aws/aws-observability/aws-otel-collector:v0.48.0" &&
+          one([for container in definition : container if container.name == "aws-otel-collector"]).essential &&
+          one([for container in definition : container if container.name == "aws-otel-collector"]).command == ["--config=/etc/ecs/ecs-default-config.yaml"]
+        )
+      ])
+    )
     error_message = "Every task must run the pinned essential ADOT Collector sidecar."
   }
 
@@ -850,6 +861,10 @@ run "monitoring_covers_platform_and_llm_failure_modes" {
   assert {
     condition = (
       length(jsondecode(aws_cloudwatch_dashboard.this.dashboard_body).widgets) == 6 &&
+      alltrue(flatten([
+        for widget in jsondecode(aws_cloudwatch_dashboard.this.dashboard_body).widgets :
+        widget.type == "metric" ? [for metric in widget.properties.metrics : can(metric[0])] : []
+      ])) &&
       strcontains(aws_cloudwatch_dashboard.this.dashboard_body, "RunningTaskCount") &&
       strcontains(aws_cloudwatch_dashboard.this.dashboard_body, "DesiredTaskCount") &&
       strcontains(aws_cloudwatch_dashboard.this.dashboard_body, "BlockedRequests") &&

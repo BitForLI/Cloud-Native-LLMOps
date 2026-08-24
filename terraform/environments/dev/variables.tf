@@ -105,7 +105,7 @@ variable "job_max_receive_count" {
 variable "bedrock_model_id" {
   description = "Bedrock foundation model runtime roles may invoke."
   type        = string
-  default     = "anthropic.claude-3-haiku-20240307-v1:0"
+  default     = "au.anthropic.claude-haiku-4-5-20251001-v1:0"
 
   validation {
     condition     = length(trimspace(var.bedrock_model_id)) > 0 && !strcontains(var.bedrock_model_id, "*")

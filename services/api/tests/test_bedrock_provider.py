@@ -141,6 +141,7 @@ def test_client_error_is_converted_without_exposing_aws_message():
         provider.generate("hello")
 
     assert "secret detail" not in str(exc.value)
+    assert exc.value.provider_code == "AccessDeniedException"
     assert exc.value.__cause__ is error
 
 

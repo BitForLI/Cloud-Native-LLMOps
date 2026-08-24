@@ -1,6 +1,8 @@
 locals {
-  name     = "${var.project_name}-${var.environment}"
-  alb_name = "llmops-${var.environment}"
+  name                        = "${var.project_name}-${var.environment}"
+  alb_name                    = "llmops-${var.environment}"
+  uses_au_bedrock_profile     = startswith(var.bedrock_model_id, "au.")
+  bedrock_foundation_model_id = local.uses_au_bedrock_profile ? trimprefix(var.bedrock_model_id, "au.") : var.bedrock_model_id
   common_tags = {
     Environment = var.environment
     ManagedBy   = "terraform"
@@ -65,18 +67,20 @@ module "secrets" {
 module "iam" {
   source = "../../modules/iam"
 
-  name                      = local.name
-  api_ecr_repository_arn    = module.api_ecr.repository_arn
-  worker_ecr_repository_arn = module.worker_ecr.repository_arn
-  artifact_bucket_arn       = module.database.artifact_bucket_arn
-  job_table_arn             = module.database.job_table_arn
-  inference_queue_arn       = module.queue.queue_arn
-  bedrock_model_ids         = [var.bedrock_model_id]
-  secret_arns               = [module.secrets.api_auth_secret_arn]
-  secret_kms_key_arns       = [module.secrets.kms_key_arn]
-  github_oidc_provider_arn  = var.github_oidc_provider_arn
-  github_oidc_subjects      = var.github_oidc_subjects
-  tags                      = local.common_tags
+  name                         = local.name
+  api_ecr_repository_arn       = module.api_ecr.repository_arn
+  worker_ecr_repository_arn    = module.worker_ecr.repository_arn
+  artifact_bucket_arn          = module.database.artifact_bucket_arn
+  job_table_arn                = module.database.job_table_arn
+  inference_queue_arn          = module.queue.queue_arn
+  bedrock_model_ids            = [local.bedrock_foundation_model_id]
+  bedrock_inference_profile_id = local.uses_au_bedrock_profile ? var.bedrock_model_id : null
+  bedrock_inference_regions    = local.uses_au_bedrock_profile ? ["ap-southeast-2", "ap-southeast-4"] : []
+  secret_arns                  = [module.secrets.api_auth_secret_arn]
+  secret_kms_key_arns          = [module.secrets.kms_key_arn]
+  github_oidc_provider_arn     = var.github_oidc_provider_arn
+  github_oidc_subjects         = var.github_oidc_subjects
+  tags                         = local.common_tags
 }
 
 module "alb" {
