@@ -10,11 +10,11 @@ def load_workflow():
     return yaml.load(WORKFLOW_PATH.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
 
 
-def test_monitor_is_scheduled_manual_serialized_and_isolated():
+def test_monitor_is_manual_serialized_and_isolated():
     workflow = load_workflow()
     job = workflow["jobs"]["evaluate"]
 
-    assert workflow["on"]["schedule"] == [{"cron": "17 3 * * *"}]
+    assert "schedule" not in workflow["on"]
     assert "workflow_dispatch" in workflow["on"]
     assert workflow["concurrency"] == {
         "group": "monitor-production-evaluation",

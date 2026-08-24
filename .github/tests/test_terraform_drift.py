@@ -101,13 +101,14 @@ def test_inconsistent_or_unknown_plan_status_is_rejected(status, plan, message):
         summarizer.summarize(plan, status, "c" * 40)
 
 
-def test_workflow_is_daily_protected_read_only_and_retains_sanitized_evidence():
+def test_workflow_is_manual_protected_read_only_and_retains_sanitized_evidence():
     workflow = yaml.load(WORKFLOW_PATH.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     job = workflow["jobs"]["audit"]
     scripts = "\n".join(step.get("run", "") for step in job["steps"])
     actions = [step["uses"] for step in job["steps"] if "uses" in step]
 
-    assert workflow["on"]["schedule"] == [{"cron": "43 4 * * *"}]
+    assert "schedule" not in workflow["on"]
+    assert "workflow_dispatch" in workflow["on"]
     assert job["environment"] == "production-drift"
     assert job["permissions"] == {"contents": "read", "id-token": "write"}
     assert "-detailed-exitcode" in scripts
